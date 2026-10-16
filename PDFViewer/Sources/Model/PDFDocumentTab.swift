@@ -23,6 +23,9 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     @Published private(set) var matches: [PDFSelection] = []
     @Published private(set) var selectedMatchIndex: Int = 0
 
+    @Published var pageNotes: [Int: String] = [:]
+    @Published var isAnnotatingPages = false
+
     /// Called whenever something worth persisting changed.
     var onDirty: (() -> Void)?
 

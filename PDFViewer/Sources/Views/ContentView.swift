@@ -12,6 +12,12 @@ struct ContentView: View {
             Divider()
 
             HStack(spacing: 0) {
+                if store.showAnnotations, !store.isGeneratedTabActive, let tab = store.selectedTab {
+                    PageNotesPanel(tab: tab)
+                        .id("annotation-\(tab.id)")
+                    Divider()
+                }
+
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -91,6 +97,34 @@ struct ContentView: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .help("Find text in this document (⌘F)")
+
+                Menu {
+                    Button(store.showAnnotations ? "Hide Notes" : "Show Notes") {
+                        store.toggleAnnotations()
+                    }
+
+                    Divider()
+
+                    Button("Annotate All Pages") {
+                        store.showAnnotations = true
+                        Task { await agent.annotatePages(tab) }
+                    }
+                    .disabled(tab.isAnnotatingPages)
+
+                    Button("Annotate This Page") {
+                        store.showAnnotations = true
+                        Task { await agent.annotateCurrentPage(tab) }
+                    }
+                    .disabled(tab.isAnnotatingPages)
+
+                    Button("Clear Notes") {
+                        tab.pageNotes.removeAll()
+                    }
+                    .disabled(tab.pageNotes.isEmpty)
+                } label: {
+                    Image(systemName: "text.bubble")
+                }
+                .help("Notes beside the page")
             }
 
             ToolbarItem(placement: .principal) {

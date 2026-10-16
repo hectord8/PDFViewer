@@ -30,6 +30,7 @@
 		AA00000000000000000000B7 /* FlashcardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A7 /* FlashcardView.swift */; };
 		AA00000000000000000000B8 /* SummaryTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A8 /* SummaryTab.swift */; };
 		AA00000000000000000000B9 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A9 /* SummaryView.swift */; };
+		AA00000000000000000000BA /* AnnotationRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000AA /* AnnotationRail.swift */; };
 		D4BACBF2F94D95C59BA98E50 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -58,6 +59,7 @@
 		AA00000000000000000000A7 /* FlashcardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FlashcardView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000A8 /* SummaryTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SummaryTab.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000A9 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SummaryView.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000AA /* AnnotationRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationRail.swift"; sourceTree = "<group>"; };
 		6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -137,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				AA00000000000000000000A3 /* AgentChatPanel.swift */,
+				AA00000000000000000000AA /* AnnotationRail.swift */,
 				DEFADFDAC63C368ADDE41861 /* ContentView.swift */,
 				51B959C6A762EC1C97A5798E /* DocumentTabBar.swift */,
 				F143F3D701A001C7D82FC56D /* FindBar.swift */,
@@ -248,6 +251,7 @@
 				8DC3D38B039383E8B96F3D45 /* SessionStore.swift in Sources */,
 				AA00000000000000000000B1 /* AgentChatModel.swift in Sources */,
 				AA00000000000000000000B2 /* OpenCodeClient.swift in Sources */,
+				AA00000000000000000000BA /* AnnotationRail.swift in Sources */,
 				3E5C42897005A38D466A87C1 /* ContentView.swift in Sources */,
 				AA00000000000000000000B3 /* AgentChatPanel.swift in Sources */,
 				F0695F34B7FB022F3F5DED15 /* DocumentTabBar.swift in Sources */,

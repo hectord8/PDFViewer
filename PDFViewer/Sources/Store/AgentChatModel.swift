@@ -326,6 +326,11 @@ final class AgentChatModel: ObservableObject {
             return
         }
 
+        if Self.looksLikeAnnotate(prompt) {
+            await performAnnotate()
+            return
+        }
+
         if Self.looksLikeSummary(prompt) {
             await performSummary(prompt: prompt, context: attached, client: client)
             return
@@ -938,6 +943,137 @@ final class AgentChatModel: ObservableObject {
         return request + "\n\nRequest: \(prompt)"
     }
 
+    // MARK: - Annotations
+
+    static func looksLikeAnnotate(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        if lower.contains("margin note") || lower.contains("side note") { return true }
+        return lower
+            .split(whereSeparator: { !$0.isLetter })
+            .contains { $0 == "annotate" || $0 == "annotation" || $0 == "annotations" }
+    }
+
+    private func performAnnotate() async {
+        guard let tab = library.activeTab else {
+            messages.append(
+                ChatMessage(role: .assistant, text: "Open a PDF first, then I can annotate it.", attachedContext: nil)
+            )
+            return
+        }
+
+        library.showAnnotations = true
+        await annotatePages(tab)
+
+        let count = tab.pageNotes.count
+        guard count > 0 else { return }
+        messages.append(
+            ChatMessage(
+                role: .assistant,
+                text: "Added notes beside \(count) page\(count == 1 ? "" : "s") of “\(tab.title)”.",
+                attachedContext: nil
+            )
+        )
+    }
+
+    func annotatePages(_ tab: PDFDocumentTab) async {
+        await generatePageNotes(tab, pages: Array(0..<tab.pageCount))
+    }
+
+    func annotateCurrentPage(_ tab: PDFDocumentTab) async {
+        await generatePageNotes(tab, pages: [tab.pageIndex])
+    }
+
+    private func generatePageNotes(_ tab: PDFDocumentTab, pages: [Int]) async {
+        guard !tab.isAnnotatingPages, !pages.isEmpty else { return }
+        guard let client else {
+            log("Can’t annotate — not connected to opencode.")
+            return
+        }
+        guard let context = Self.pageContext(tab, pages: pages) else {
+            log("No readable text to annotate for “\(tab.title)”.")
+            return
+        }
+
+        tab.isAnnotatingPages = true
+        log("Annotating \(pages.count) page\(pages.count == 1 ? "" : "s") of “\(tab.title)”…")
+        defer { tab.isAnnotatingPages = false }
+
+        do {
+            let session = try await ensureSession(client: client)
+            let request = Self.pageNotesRequest(document: tab.title, context: context)
+            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+            let notes = Self.parsePageNotes(reply)
+            guard !notes.isEmpty else {
+                log("No per-page notes were found in the reply.")
+                return
+            }
+            for (page, note) in notes {
+                tab.pageNotes[page] = note
+            }
+            log("Notes ready for \(notes.count) page\(notes.count == 1 ? "" : "s").")
+        } catch {
+            log("Annotate failed — \(Self.describe(error))")
+        }
+    }
+
+    private static func pageContext(_ tab: PDFDocumentTab, pages: [Int]) -> String? {
+        var pieces: [String] = []
+        for index in pages {
+            guard let page = tab.document.page(at: index) else { continue }
+            let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            pieces.append("--- Page \(index + 1) ---\n\(text)")
+        }
+        guard !pieces.isEmpty else { return nil }
+        return "Document: \(tab.title)\n\n" + pieces.joined(separator: "\n\n")
+    }
+
+    /// Parses "## Page N" sections into page-indexed notes.
+    static func parsePageNotes(_ text: String) -> [Int: String] {
+        var result: [Int: String] = [:]
+        var currentPage: Int?
+        var buffer: [String] = []
+
+        func flush() {
+            guard let currentPage else { return }
+            let body = buffer.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty {
+                result[currentPage - 1] = body
+            }
+            buffer.removeAll()
+        }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if let page = pageHeadingNumber(String(line)) {
+                flush()
+                currentPage = page
+            } else if currentPage != nil {
+                buffer.append(String(line))
+            }
+        }
+        flush()
+        return result
+    }
+
+    private static func pageHeadingNumber(_ line: String) -> Int? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("#") else { return nil }
+        let rest = trimmed.drop { $0 == "#" || $0 == " " }
+        guard rest.lowercased().hasPrefix("page") else { return nil }
+        let digits = rest.drop { !$0.isNumber }.prefix { $0.isNumber }
+        return Int(digits)
+    }
+
+    private static func pageNotesRequest(document: String, context: String) -> String {
+        """
+        The reader wants notes beside each page of a PDF so they can go deeper on that page's topic. For every page in the material below, write a short set of notes: first summarise the page's key idea in a sentence, then expand on it with the helpful context, a definition or example, and why it matters. Keep each page to a few tight bullets and skip notation and trivia.
+
+        Use Markdown with one section per page, each introduced by a heading in exactly the form "## Page N" where N is that page's number, followed by that page's notes and nothing else.
+
+        \(context)
+        """
+    }
+
     // MARK: - Summaries
 
     struct SavedSummary: Identifiable, Hashable {
@@ -1299,6 +1435,57 @@ final class AgentChatModel: ObservableObject {
 
         \(question)
         """
+    }
+
+    /// Builds the PDF text attached to a request for the given scope.
+    static func context(for tab: PDFDocumentTab, scope: ContextScope) -> String? {
+        switch scope {
+        case .none:
+            return nil
+        case .currentPage:
+            return currentPageContext(tab)
+        case .wholeDocument:
+            return wholeDocumentContext(tab)
+        }
+    }
+
+    private static func currentPageContext(_ tab: PDFDocumentTab) -> String? {
+        guard let page = tab.document.page(at: tab.pageIndex) else { return nil }
+        let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return "Document: \(tab.title) — page \(tab.pageIndex + 1) of \(tab.pageCount)\n\n\(text)"
+    }
+
+    private static func wholeDocumentContext(_ tab: PDFDocumentTab) -> String? {
+        let budget = 40_000
+        var pieces: [String] = []
+        var used = 0
+        var truncated = false
+
+        for index in 0..<tab.pageCount {
+            guard let page = tab.document.page(at: index) else { continue }
+            let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let chunk = "--- Page \(index + 1) ---\n\(text)"
+            if used + chunk.count > budget {
+                let remaining = budget - used
+                if remaining > 0 {
+                    pieces.append(String(chunk.prefix(remaining)))
+                }
+                truncated = true
+                break
+            }
+            used += chunk.count
+            pieces.append(chunk)
+        }
+
+        guard !pieces.isEmpty else { return nil }
+        let pages = "\(tab.pageCount) page\(tab.pageCount == 1 ? "" : "s")"
+        var header = "Document: \(tab.title) — \(pages)"
+        if truncated {
+            header += " (text truncated to fit the context limit)"
+        }
+        return header + "\n\n" + pieces.joined(separator: "\n\n")
     }
 
     static func normalizedURL(from text: String) -> URL? {

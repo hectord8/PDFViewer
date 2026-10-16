@@ -124,6 +124,12 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("a", modifiers: [.command, .option])
 
+            Button(store.showAnnotations ? "Hide Notes" : "Show Notes") {
+                store.toggleAnnotations()
+            }
+            .keyboardShortcut("n", modifiers: [.command, .option])
+            .disabled(store.selectedTab == nil)
+
             Divider()
 
             Button("Zoom In") {

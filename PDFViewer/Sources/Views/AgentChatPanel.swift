@@ -432,53 +432,7 @@ struct AgentChatPanel: View {
 
     private func contextForScope() -> String? {
         guard let tab = store.activeTab else { return nil }
-        switch model.contextScope {
-        case .none:
-            return nil
-        case .currentPage:
-            return currentPageContext(tab)
-        case .wholeDocument:
-            return wholeDocumentContext(tab)
-        }
-    }
-
-    private func currentPageContext(_ tab: PDFDocumentTab) -> String? {
-        guard let page = tab.document.page(at: tab.pageIndex) else { return nil }
-        let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        return "Document: \(tab.title) — page \(tab.pageIndex + 1) of \(tab.pageCount)\n\n\(text)"
-    }
-
-    private func wholeDocumentContext(_ tab: PDFDocumentTab) -> String? {
-        let budget = 40_000
-        var pieces: [String] = []
-        var used = 0
-        var truncated = false
-
-        for index in 0..<tab.pageCount {
-            guard let page = tab.document.page(at: index) else { continue }
-            let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-            let chunk = "--- Page \(index + 1) ---\n\(text)"
-            if used + chunk.count > budget {
-                let remaining = budget - used
-                if remaining > 0 {
-                    pieces.append(String(chunk.prefix(remaining)))
-                }
-                truncated = true
-                break
-            }
-            used += chunk.count
-            pieces.append(chunk)
-        }
-
-        guard !pieces.isEmpty else { return nil }
-        let pages = "\(tab.pageCount) page\(tab.pageCount == 1 ? "" : "s")"
-        var header = "Document: \(tab.title) — \(pages)"
-        if truncated {
-            header += " (text truncated to fit the context limit)"
-        }
-        return header + "\n\n" + pieces.joined(separator: "\n\n")
+        return AgentChatModel.context(for: tab, scope: model.contextScope)
     }
 }
 
