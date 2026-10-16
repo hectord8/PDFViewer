@@ -52,6 +52,17 @@ struct FlashcardView: View {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control])
         guard modifiers.isEmpty else { return event }
 
+        switch event.keyCode {
+        case 123: // Left arrow
+            tab.previous()
+            return nil
+        case 124: // Right arrow
+            tab.next()
+            return nil
+        default:
+            break
+        }
+
         guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else {
             return event
         }
@@ -127,8 +138,12 @@ struct FlashcardView: View {
     }
 
     private var cardArea: some View {
-        VStack(spacing: 16) {
+        HStack(spacing: 20) {
             Spacer(minLength: 0)
+
+            arrowButton(systemName: "chevron.left", enabled: tab.canGoPrevious, help: "Previous card (←)") {
+                tab.previous()
+            }
 
             if let card = tab.current {
                 ZStack {
@@ -159,16 +174,40 @@ struct FlashcardView: View {
                     }
                     .padding(32)
                 }
-                .frame(maxWidth: 620)
-                .frame(height: 340)
+                .frame(maxWidth: 620, minHeight: 340, maxHeight: 340)
                 .contentShape(Rectangle())
                 .onTapGesture { tab.flip() }
+            }
+
+            arrowButton(systemName: "chevron.right", enabled: tab.canGoNext, help: "Next card (→)") {
+                tab.next()
             }
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
+    }
+
+    private func arrowButton(
+        systemName: String,
+        enabled: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 24, weight: .semibold))
+                .frame(width: 48, height: 48)
+                .background(
+                    Circle().fill(enabled ? Color.primary.opacity(0.08) : Color.clear)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.3))
+        .disabled(!enabled)
+        .help(help)
     }
 
     private var footer: some View {
@@ -206,7 +245,7 @@ struct FlashcardView: View {
 
             Spacer()
 
-            Text("\(tab.remainingCount) remaining")
+            Text("Card \(tab.position) of \(tab.remainingCount)")
                 .font(.callout)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
