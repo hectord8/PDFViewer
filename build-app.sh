@@ -12,8 +12,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="${BUILD_DIR:-$ROOT/dist}"
-APP="$DIST/PDFViewer.app"
-CONTENTS="$APP/Contents"
+FINAL="$DIST/PDFViewer.app"
 BUNDLE_ID="com.example.PDFViewer"
 DEPLOYMENT_TARGET="14.0"
 
@@ -33,14 +32,23 @@ fi
 say "SDK: $SDK ($(xcrun --sdk macosx --show-sdk-version))"
 
 # --- 1. Clean ------------------------------------------------------------
+# Compile and sign in a staging dir outside the project. If the project lives
+# in an iCloud-synced folder (~/Documents often is), the file provider re-stamps
+# com.apple.FinderInfo onto anything created there within milliseconds, and
+# codesign rejects that as "detritus". Signing in /tmp avoids the race; the
+# signed bundle is copied into place afterwards.
+STAGE="$(mktemp -d)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$STAGE" "$TMP"' EXIT
+
+APP="$STAGE/PDFViewer.app"
+CONTENTS="$APP/Contents"
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
 # --- 2. Compile a universal binary --------------------------------------
 # Both slices so the app still works if you move it to an Intel Mac.
 say "Compiling (arm64 + x86_64, macOS $DEPLOYMENT_TARGET+)"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
 
 SOURCES=()
 while IFS= read -r f; do SOURCES+=("$f"); done < <(find "$ROOT/PDFViewer/Sources" -name '*.swift' | sort)
@@ -91,10 +99,7 @@ cp "$ROOT/PDFViewer/Resources/Info.plist" "$CONTENTS/Info.plist"
 # PkgInfo is required by some AppKit paths and by Finder.
 printf 'APPL????' > "$CONTENTS/PkgInfo"
 
-# --- 5. Sign -------------------------------------------------------------
-# Strip extended attributes first. If this script lives in an iCloud-synced
-# folder (~/Documents often is) macOS stamps com.apple.FinderInfo onto the
-# bundle, and codesign rejects that as "detritus".
+# --- 5. Sign (in staging) ------------------------------------------------
 xattr -cr "$APP" 2>/dev/null || true
 
 # Ad-hoc signature. Enough to run locally on this Mac, no Apple ID needed.
@@ -105,21 +110,30 @@ codesign --force --sign - \
   "$APP" 2>&1 | sed 's/^/    /' || die "codesign failed"
 
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
-touch "$APP"
 
-say "Built: $APP"
-du -sh "$APP" | sed 's/^/    /'
+# --- 6. Copy the signed bundle into place -------------------------------
+mkdir -p "$DIST"
+rm -rf "$FINAL"
+cp -R "$APP" "$FINAL"
+# Clear any FinderInfo the destination folder may have stamped; the signature
+# is unaffected by extended attributes, so the app still verifies and runs.
+xattr -cr "$FINAL" 2>/dev/null || true
+touch "$FINAL"
 
-# --- 6. Optional install -------------------------------------------------
+say "Built: $FINAL"
+du -sh "$FINAL" | sed 's/^/    /'
+
+# --- 7. Optional install -------------------------------------------------
 if [[ "${1:-}" == "--install" ]]; then
   if [[ -w /Applications || -e /Applications ]]; then
     say "Installing to /Applications"
     rm -rf "/Applications/PDFViewer.app"
-    cp -R "$APP" /Applications/
+    cp -R "$FINAL" /Applications/
+    xattr -cr "/Applications/PDFViewer.app" 2>/dev/null || true
     say "Installed: /Applications/PDFViewer.app"
   else
     die "/Applications is not writable. Re-run without sudo, or copy it by hand."
   fi
 fi
 
-say "Done. Open it with: open \"$APP\""
+say "Done. Open it with: open \"$FINAL\""

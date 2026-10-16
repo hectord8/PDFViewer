@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Save immediately, without waiting for the debounce timer.
     func applicationWillTerminate(_ notification: Notification) {
         LibraryStore.shared.saveSessionNow()
+        MainActor.assumeIsolated {
+            AgentChatModel.shared.stopServer()
+        }
     }
 
     /// Quit when the last window closes, like a normal document app.

@@ -12,6 +12,7 @@ dependencies. No paid Apple Developer account needed.
 - Continuous vertical scrolling, zoom (⌘+ / ⌘−), fit to width
 - Find bar (⌘F) with match highlighting and next/previous
 - Toggleable thumbnail sidebar (⌘⌥T)
+- Opencode agent panel (⌘⌥A): chat about the whole document or just the current page, using a local `opencode serve`
 - Light and dark mode follow the system automatically
 
 ---
@@ -269,6 +270,7 @@ Target > **Build Settings** > **Info**:
 | Zoom in / out       | ⌘+ / ⌘−              |
 | Actual size (100%)  | ⌘0                   |
 | Toggle thumbnails   | ⌘⌥T                  |
+| Toggle agent panel  | ⌘⌥A                  |
 | Next / previous hit | ⏎ / ⌘G in the find bar |
 | Dismiss find bar    | esc                   |
 
@@ -380,7 +382,9 @@ PDFViewer/
 │   │   └── Session.swift           Codable shapes written to disk
 │   ├── Store/
 │   │   ├── LibraryStore.swift      tab list, open/close, debounced session save
-│   │   └── SessionStore.swift      reads/writes session.json, file bookmarks
+│   │   ├── SessionStore.swift      reads/writes session.json, file bookmarks
+│   │   ├── AgentChatModel.swift    agent panel state, server lifecycle, settings
+│   │   └── OpenCodeClient.swift    HTTP client for the opencode server
 │   └── Views/
 │       ├── ContentView.swift       root layout, window drop target, toolbar
 │       ├── DocumentTabBar.swift    the tab strip
@@ -388,6 +392,7 @@ PDFViewer/
 │       ├── FitWidthPDFView.swift   PDFView that reports width changes
 │       ├── ThumbnailSidebar.swift  PDFThumbnailView bridge
 │       ├── FindBar.swift           ⌘F search field and match counter
+│       ├── AgentChatPanel.swift    opencode chat sidebar
 │       └── WelcomeView.swift       empty state
 └── Resources/
     ├── Info.plist                  declares the app as a PDF handler

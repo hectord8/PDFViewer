@@ -5,11 +5,13 @@ import UniformTypeIdentifiers
 struct PDFViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = LibraryStore.shared
+    @StateObject private var agent = AgentChatModel.shared
 
     var body: some Scene {
         WindowGroup("PDF Viewer") {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(agent)
                 .onAppear {
                     // SwiftUI installs its own "Close" (Cmd+W) item that closes the window.
                     // We clear it once so our Cmd+W "Close Tab" item is the only Cmd+W.
@@ -58,6 +60,11 @@ struct PDFViewerApp: App {
                 store.toggleThumbnails()
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
+
+            Button(store.showAgentPanel ? "Hide Agent Panel" : "Show Agent Panel") {
+                store.toggleAgentPanel()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .option])
 
             Divider()
 

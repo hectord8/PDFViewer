@@ -10,11 +10,20 @@ struct ContentView: View {
 
             Divider()
 
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                    store.open(providers: providers)
+            HStack(spacing: 0) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                        store.open(providers: providers)
+                    }
+
+                if store.showAgentPanel {
+                    Divider()
+                    AgentChatPanel()
+                        .id("agent-panel")
                 }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 760, minHeight: 520)
         .toolbar { toolbarContent }
@@ -95,6 +104,15 @@ struct ContentView: View {
                 }
                 .help("Fit to width")
             }
+        }
+
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                store.toggleAgentPanel()
+            } label: {
+                Image(systemName: "sparkles")
+            }
+            .help("Ask opencode about this PDF")
         }
     }
 }

@@ -15,6 +15,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var tabs: [PDFDocumentTab] = []
     @Published var selectedTabID: UUID?
     @Published var showThumbnails = true
+    @Published var showAgentPanel = false
     @Published var errorMessage: String?
 
     @Published var secondaryTabID: UUID?
@@ -437,6 +438,10 @@ final class LibraryStore: ObservableObject {
     func toggleThumbnails() {
         showThumbnails.toggle()
         scheduleSessionSave()
+    }
+
+    func toggleAgentPanel() {
+        showAgentPanel.toggle()
     }
 
     func zoomIn() {
