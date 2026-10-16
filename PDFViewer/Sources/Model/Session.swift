@@ -10,9 +10,19 @@ struct TabState: Codable {
     var scale: Double
 }
 
+enum Pane: String, Codable {
+    case primary
+    case secondary
+}
+
 /// The whole app state we want to come back to next launch.
 struct Session: Codable {
     var showThumbnails: Bool
     var selectedPath: String?
+    var secondaryPath: String?
+    var secondaryBookmark: Data?
+    var focusedPane: Pane?
+    var splitFraction: Double?
+    var pinnedPaths: [String]?
     var tabs: [TabState]
 }

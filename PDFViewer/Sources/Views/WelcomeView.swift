@@ -27,7 +27,8 @@ struct WelcomeView: View {
                 shortcutRow("Find", "⌘F")
                 shortcutRow("Next / Previous Tab", "⌘⇧] / ⌘⇧[")
                 shortcutRow("Close Tab", "⌘W")
-                shortcutRow("Thumbnails", "⌘⇧T")
+                shortcutRow("Reopen Closed Tab", "⌘⇧T")
+                shortcutRow("Thumbnails", "⌘⌥T")
                 shortcutRow("Zoom In / Out", "⌘+ / ⌘−")
             }
             .padding(.top, 18)

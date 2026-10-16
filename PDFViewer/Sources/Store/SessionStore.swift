@@ -42,7 +42,11 @@ enum SessionStore {
     }
 
     static func resolve(_ state: TabState) -> URL? {
-        if let bookmark = state.bookmark {
+        resolve(path: state.path, bookmark: state.bookmark)
+    }
+
+    static func resolve(path: String, bookmark: Data?) -> URL? {
+        if let bookmark = bookmark {
             var isStale = false
             if let url = try? URL(
                 resolvingBookmarkData: bookmark,
@@ -54,7 +58,7 @@ enum SessionStore {
             }
         }
 
-        let url = URL(fileURLWithPath: state.path)
+        let url = URL(fileURLWithPath: path)
         return FileManager.default.isReadableFile(atPath: url.path) ? url : nil
     }
 }

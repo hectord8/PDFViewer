@@ -4,12 +4,14 @@ A native macOS PDF viewer built with SwiftUI and PDFKit. macOS 14+, no third-par
 dependencies. No paid Apple Developer account needed.
 
 - Tabbed interface, one tab per PDF
+- Tab context menu: pin, duplicate, reload, close, close other tabs, close tabs to the right
+- Split view: show two PDFs side by side with a draggable divider (right-click a tab)
 - Open via File > Open (⌘O), by dragging onto the window, or by dropping onto the Dock icon
-- ⌘⇧`[` / ⌘⇧`]` switch tabs, ⌘W closes the current tab
-- Remembers every open tab, its page, and its zoom, and restores them on relaunch
+- ⌘⇧`[` / ⌘⇧`]` switch tabs, ⌘W closes the current tab, ⌘⇧T reopens a closed tab
+- Remembers every open tab, its page, its zoom, pinned tabs and split layout, and restores them on relaunch
 - Continuous vertical scrolling, zoom (⌘+ / ⌘−), fit to width
 - Find bar (⌘F) with match highlighting and next/previous
-- Toggleable thumbnail sidebar (⌘⇧T)
+- Toggleable thumbnail sidebar (⌘⌥T)
 - Light and dark mode follow the system automatically
 
 ---
@@ -263,9 +265,10 @@ Target > **Build Settings** > **Info**:
 | Close current tab   | ⌘W                   |
 | Find in document    | ⌘F                   |
 | Next / previous tab | ⌘⇧`]` / ⌘⇧`[`      |
+| Reopen closed tab   | ⌘⇧T                  |
 | Zoom in / out       | ⌘+ / ⌘−              |
 | Actual size (100%)  | ⌘0                   |
-| Toggle thumbnails   | ⌘⇧T                  |
+| Toggle thumbnails   | ⌘⌥T                  |
 | Next / previous hit | ⏎ / ⌘G in the find bar |
 | Dismiss find bar    | esc                   |
 

@@ -26,6 +26,9 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     /// Called whenever something worth persisting changed.
     var onDirty: (() -> Void)?
 
+    /// Called when the user clicks into this tab's PDF, used to focus its pane.
+    var onFocus: (() -> Void)?
+
     private var pageObserver: NSObjectProtocol?
     private var searchWorkItem: DispatchWorkItem?
     private var isRestoring = false
@@ -54,6 +57,9 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
             guard let self else { return }
             self.applyFitWidthIfNeeded()
             self.finishRestoringIfNeeded()
+        }
+        view.onFocus = { [weak self] in
+            self?.onFocus?()
         }
 
         pageObserver = NotificationCenter.default.addObserver(

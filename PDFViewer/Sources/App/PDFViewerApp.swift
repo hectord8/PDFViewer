@@ -37,6 +37,12 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("w", modifiers: .command)
             .disabled(store.selectedTab == nil)
+
+            Button("Reopen Closed Tab") {
+                store.reopenClosedTab()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(!store.canReopenClosedTab)
         }
 
         CommandMenu("View") {
@@ -51,7 +57,7 @@ struct PDFViewerApp: App {
             Button(store.showThumbnails ? "Hide Thumbnails" : "Show Thumbnails") {
                 store.toggleThumbnails()
             }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .keyboardShortcut("t", modifiers: [.command, .option])
 
             Divider()
 

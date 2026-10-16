@@ -4,10 +4,11 @@ import PDFKit
 struct PDFViewerPane: View {
     @ObservedObject var tab: PDFDocumentTab
     @EnvironmentObject private var store: LibraryStore
+    var isFocused: Bool = true
 
     var body: some View {
         HStack(spacing: 0) {
-            if store.showThumbnails {
+            if store.showThumbnails && isFocused {
                 ThumbnailSidebar(tab: tab)
                     .frame(width: 172)
                     .id("sidebar")
@@ -18,7 +19,7 @@ struct PDFViewerPane: View {
                 PDFKitView(tab: tab)
                     .id("pdf-view")
 
-                if store.isFindBarVisible {
+                if store.isFindBarVisible(for: tab) {
                     FindBar(tab: tab, onClose: { store.endFind() })
                         .frame(height: 42)
                         .id("find-bar")
