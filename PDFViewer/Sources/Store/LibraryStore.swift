@@ -23,6 +23,15 @@ final class LibraryStore: ObservableObject {
     @Published var focusedPane: Pane = .primary
     @Published var splitFraction: Double = 0.5
 
+    @Published var notesPanelWidth: Double = UserDefaults.standard.object(forKey: "notesPanelWidth") as? Double ?? 260
+    @Published var agentPanelWidth: Double = UserDefaults.standard.object(forKey: "agentPanelWidth") as? Double ?? 360
+
+    /// Persists the panel widths once a resize drag has finished (not per frame).
+    func persistPanelWidths() {
+        UserDefaults.standard.set(notesPanelWidth, forKey: "notesPanelWidth")
+        UserDefaults.standard.set(agentPanelWidth, forKey: "agentPanelWidth")
+    }
+
     @Published private(set) var pinnedTabIDs: Set<UUID> = []
     @Published private(set) var recentlyClosed: [ClosedTab] = []
 

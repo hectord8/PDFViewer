@@ -30,7 +30,6 @@ struct PDFViewerPane: View {
         .background(Color(nsColor: .underPageBackgroundColor))
         .onAppear {
             tab.pdfView.layoutDocumentView()
-            tab.applyFitWidthIfNeeded()
             tab.finishRestoringIfNeeded()
         }
     }

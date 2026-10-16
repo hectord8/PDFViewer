@@ -31,6 +31,7 @@
 		AA00000000000000000000B8 /* SummaryTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A8 /* SummaryTab.swift */; };
 		AA00000000000000000000B9 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A9 /* SummaryView.swift */; };
 		AA00000000000000000000BA /* AnnotationRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000AA /* AnnotationRail.swift */; };
+		AA00000000000000000000BB /* MathTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000AB /* MathTextView.swift */; };
 		D4BACBF2F94D95C59BA98E50 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -60,6 +61,7 @@
 		AA00000000000000000000A8 /* SummaryTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SummaryTab.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000A9 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SummaryView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000AA /* AnnotationRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationRail.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000AB /* MathTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MathTextView.swift"; sourceTree = "<group>"; };
 		6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -145,6 +147,7 @@
 				F143F3D701A001C7D82FC56D /* FindBar.swift */,
 				790D903ED602E79F1045A82F /* FitWidthPDFView.swift */,
 				AA00000000000000000000A7 /* FlashcardView.swift */,
+				AA00000000000000000000AB /* MathTextView.swift */,
 				B884E167C35B746AE4FF4680 /* PDFViewerPane.swift */,
 				AA00000000000000000000A5 /* QuizView.swift */,
 				AA00000000000000000000A9 /* SummaryView.swift */,
@@ -258,6 +261,7 @@
 				5608D61BCAEA3B385AF63EC1 /* FindBar.swift in Sources */,
 				E1EAF35E6AB2374036269A12 /* FitWidthPDFView.swift in Sources */,
 				AA00000000000000000000B7 /* FlashcardView.swift in Sources */,
+				AA00000000000000000000BB /* MathTextView.swift in Sources */,
 				73DFD9614A28861AF091EF19 /* PDFViewerPane.swift in Sources */,
 				AA00000000000000000000B5 /* QuizView.swift in Sources */,
 				AA00000000000000000000B9 /* SummaryView.swift in Sources */,

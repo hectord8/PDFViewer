@@ -15,7 +15,11 @@ struct ContentView: View {
                 if store.showAnnotations, !store.isGeneratedTabActive, let tab = store.selectedTab {
                     PageNotesPanel(tab: tab)
                         .id("annotation-\(tab.id)")
-                    Divider()
+                        .frame(width: store.notesPanelWidth)
+
+                    PanelResizeHandle(side: .trailing, width: $store.notesPanelWidth, range: 180...560) {
+                        store.persistPanelWidths()
+                    }
                 }
 
                 content
@@ -25,9 +29,13 @@ struct ContentView: View {
                     }
 
                 if store.showAgentPanel {
-                    Divider()
+                    PanelResizeHandle(side: .leading, width: $store.agentPanelWidth, range: 260...680) {
+                        store.persistPanelWidths()
+                    }
+
                     AgentChatPanel()
                         .id("agent-panel")
+                        .frame(width: store.agentPanelWidth)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -164,8 +172,56 @@ struct ContentView: View {
             } label: {
                 Image(systemName: "sparkles")
             }
-            .help("Ask opencode about this PDF")
+            .help("Ask opencode about this document")
         }
+    }
+}
+
+private struct PanelResizeHandle: View {
+    enum Side {
+        case leading
+        case trailing
+    }
+
+    let side: Side
+    @Binding var width: Double
+    let range: ClosedRange<Double>
+    var onEnd: () -> Void = {}
+
+    @State private var startWidth: Double?
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 1)
+        }
+        .frame(width: 8)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                NSCursor.resizeLeftRight.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    if startWidth == nil { startWidth = width }
+                    let base = startWidth ?? width
+                    let delta = side == .leading ? -value.translation.width : value.translation.width
+                    let newWidth = min(max(base + delta, range.lowerBound), range.upperBound)
+                    if abs(newWidth - width) > 0.01 {
+                        width = newWidth
+                    }
+                }
+                .onEnded { _ in
+                    startWidth = nil
+                    onEnd()
+                }
+        )
     }
 }
 

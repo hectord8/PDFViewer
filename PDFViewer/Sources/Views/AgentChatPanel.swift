@@ -16,7 +16,6 @@ struct AgentChatPanel: View {
             Divider()
             footer
         }
-        .frame(width: 360)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
@@ -128,9 +127,9 @@ struct AgentChatPanel: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ask about the PDF you’re reading.")
-                .font(.callout.weight(.medium))
-            Text("Choose what gets attached with the Context menu, so opencode can read the whole document if you want.")
+            Text("Ask about this document")
+                .font(.callout.weight(.semibold))
+            Text("Attach the context you want considered, then ask a question. Select “Whole document” to let opencode reference the entire PDF.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -152,7 +151,7 @@ struct AgentChatPanel: View {
 
                 switch message.role {
                 case .assistant:
-                    MarkdownText(text: message.text)
+                    MathOrMarkdown(markdown: message.text)
                 case .user:
                     Text(message.text)
                         .font(.callout)
@@ -317,7 +316,7 @@ struct AgentChatPanel: View {
                     )
 
                     if model.input.isEmpty {
-                        Text("Ask about this PDF…")
+                        Text("Ask a question about this document…")
                             .font(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.leading, 8)

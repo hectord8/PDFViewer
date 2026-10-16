@@ -160,11 +160,13 @@ struct FlashcardView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
-                        Text(tab.showingBack ? card.back : card.front)
-                            .font(.system(size: 22, weight: .medium))
-                            .multilineTextAlignment(.center)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity)
+                        MathOrText(
+                            markdown: tab.showingBack ? card.back : card.front,
+                            fontSize: 22,
+                            alignment: .center
+                        )
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
 
                         if !tab.showingBack {
                             Text("Click to reveal the answer")

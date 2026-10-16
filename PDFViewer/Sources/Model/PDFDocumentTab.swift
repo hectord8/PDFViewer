@@ -57,9 +57,7 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
         view.backgroundColor = .textBackgroundColor
         self.pdfView = view
         view.onWidthChange = { [weak self] in
-            guard let self else { return }
-            self.applyFitWidthIfNeeded()
-            self.finishRestoringIfNeeded()
+            self?.finishRestoringIfNeeded()
         }
         view.onFocus = { [weak self] in
             self?.onFocus?()
@@ -117,8 +115,8 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     }
 
     func fitToWidth() {
-        zoomMode = .fitWidth
-        applyFitWidthIfNeeded(force: true)
+        zoomMode = .manual
+        applyFitWidthNow()
         onDirty?()
     }
 
@@ -129,8 +127,10 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
         onDirty?()
     }
 
-    func applyFitWidthIfNeeded(force: Bool = false) {
-        guard zoomMode == .fitWidth else { return }
+    /// Fits the current page to the view's width. Applied only when the user
+    /// asks for it (or a saved fit-width tab is restored) — never automatically
+    /// on layout changes, so opening the side panels can't change the zoom.
+    private func applyFitWidthNow() {
         guard let page = pdfView.currentPage ?? document.page(at: 0) else { return }
 
         let pageWidth = page.bounds(for: pdfView.displayBox).width
@@ -138,14 +138,7 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
 
         let horizontalMargin: CGFloat = 8
         let proposed = (pdfView.bounds.width - horizontalMargin * 2) / pageWidth
-        let clamped = min(max(proposed, pdfView.minScaleFactor), pdfView.maxScaleFactor)
-
-        // Guard against a resize feedback loop: only nudge the scale when it
-        // is meaningfully different.
-        if force || abs(pdfView.scaleFactor - clamped) > clamped * 0.005 {
-            pdfView.scaleFactor = clamped
-            onDirty?()
-        }
+        pdfView.scaleFactor = min(max(proposed, pdfView.minScaleFactor), pdfView.maxScaleFactor)
     }
 
     // MARK: - Search
@@ -237,7 +230,10 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     func finishRestoringIfNeeded() {
         guard isRestoring, pdfView.bounds.width > 1 else { return }
 
-        applyFitWidthIfNeeded(force: true)
+        if zoomMode == .fitWidth {
+            applyFitWidthNow()
+            zoomMode = .manual
+        }
 
         if let index = pendingPageIndex, let page = document.page(at: index) {
             pdfView.go(to: page)

@@ -538,7 +538,7 @@ final class AgentChatModel: ObservableObject {
 
     private static func quizGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create an exam-style quiz for revising for a final exam. Ask questions in the style of a final exam — conceptual, applied and integrative — that test the concepts most likely to be assessed. Ignore notation, symbol or parameter formats, exact wording and other low-value trivia; a question that just asks for a format or definition is a waste of time. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        Create an exam-style quiz for revising for a final exam. Ask questions in the style of a final exam — conceptual, applied and integrative — that test the concepts most likely to be assessed. Ignore notation, symbol or parameter formats, exact wording and other low-value trivia; a question that just asks for a format or definition is a waste of time. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
         {"title": "Quiz title", "questions": [{"question": "The question text", "answer": "A concise model answer used for marking", "marks": 1}]}
         Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
         """
@@ -931,7 +931,7 @@ final class AgentChatModel: ObservableObject {
 
     private static func flashcardGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create flashcards for revising for a final exam. Each card must test understanding that could actually be examined — concepts, reasoning, mechanisms, comparisons, cause and effect, and applications. Prefer "why", "how" and "what happens if" over isolated facts. Do not make cards for notation, symbol or parameter formats, bare definitions with no reasoning, or lecture-specific trivia — for example, "what format is a percept" is a waste of time and must be skipped. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        Create flashcards for revising for a final exam. Each card must test understanding that could actually be examined — concepts, reasoning, mechanisms, comparisons, cause and effect, and applications. Prefer "why", "how" and "what happens if" over isolated facts. Do not make cards for notation, symbol or parameter formats, bare definitions with no reasoning, or lecture-specific trivia — for example, "what format is a percept" is a waste of time and must be skipped. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
         {"title": "Deck title", "cards": [{"front": "prompt or question", "back": "answer"}]}
         Make as many cards as the material genuinely supports: cover the distinct examinable ideas, but don't pad to a round number and don't add trivial, vague or repetitive filler. If the request asks for a specific number, follow that instead. Keep each side short and focused.
         """
@@ -1068,7 +1068,7 @@ final class AgentChatModel: ObservableObject {
         """
         The reader wants notes beside each page of a PDF so they can go deeper on that page's topic. For every page in the material below, write a short set of notes: first summarise the page's key idea in a sentence, then expand on it with the helpful context, a definition or example, and why it matters. Keep each page to a few tight bullets and skip notation and trivia.
 
-        Use Markdown with one section per page, each introduced by a heading in exactly the form "## Page N" where N is that page's number, followed by that page's notes and nothing else.
+        Write any mathematics as LaTeX (inline $...$, display $$...$$). Use Markdown with one section per page, each introduced by a heading in exactly the form "## Page N" where N is that page's number, followed by that page's notes and nothing else.
 
         \(context)
         """
@@ -1294,7 +1294,7 @@ final class AgentChatModel: ObservableObject {
 
     private static func summaryRequest(prompt: String, context: String?) -> String {
         var request = """
-        Summarize the material below as a final-exam study aid, in clear, well-structured Markdown: a one-paragraph overview, then the key examinable concepts as bullets (definitions, mechanisms, comparisons, applications), then any important conclusions or takeaways. Prioritise what is most likely to be assessed and leave out lecture-specific trivia, notation or parameter formats, and throwaway details. Be concise but cover everything important. Respond with Markdown only — no JSON, and don't wrap the whole answer in a code fence.
+        Summarize the material below as a final-exam study aid, in clear, well-structured Markdown: a one-paragraph overview, then the key examinable concepts as bullets (definitions, mechanisms, comparisons, applications), then any important conclusions or takeaways. Write any mathematics as LaTeX (inline $...$, display $$...$$). Prioritise what is most likely to be assessed and leave out lecture-specific trivia, notation or parameter formats, and throwaway details. Be concise but cover everything important. Respond with Markdown only — no JSON, and don't wrap the whole answer in a code fence.
         """
 
         if let context, !context.isEmpty {
@@ -1425,9 +1425,12 @@ final class AgentChatModel: ObservableObject {
     }
 
     static func compose(question: String, context: String?) -> String {
-        guard let context, !context.isEmpty else { return question }
+        let latex = "Write any mathematics as LaTeX: inline math as $...$ and display equations as $$...$$."
+        guard let context, !context.isEmpty else {
+            return "\(latex)\n\n\(question)"
+        }
         return """
-        The user is reading a PDF in a macOS app. Use the page text below as context.
+        The user is reading a PDF in a macOS app. \(latex)
 
         [PDF page context]
         \(context)

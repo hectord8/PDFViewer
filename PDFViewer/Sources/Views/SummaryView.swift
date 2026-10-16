@@ -10,7 +10,7 @@ struct SummaryView: View {
             header
             Divider()
             ScrollView {
-                MarkdownText(text: tab.text)
+                MathOrMarkdown(markdown: tab.text)
                     .padding(24)
                     .frame(maxWidth: 760, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)

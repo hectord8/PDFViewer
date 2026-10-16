@@ -60,7 +60,7 @@ for ARCH in arm64 x86_64; do
     -target "${ARCH}-apple-macosx${DEPLOYMENT_TARGET}" \
     -swift-version 5 \
     -O \
-    -framework SwiftUI -framework PDFKit -framework AppKit \
+    -framework SwiftUI -framework PDFKit -framework AppKit -framework WebKit \
     -o "$TMP/PDFViewer-$ARCH" \
     "${SOURCES[@]}"
 done

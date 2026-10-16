@@ -54,9 +54,7 @@ struct QuizView: View {
                 Text("\(index + 1).")
                     .font(.headline)
                     .monospacedDigit()
-                Text(question.prompt)
-                    .font(.body)
-                    .textSelection(.enabled)
+                MathOrText(markdown: question.prompt, fontSize: 14)
                 Spacer(minLength: 8)
                 Text("\(question.marks) mark\(question.marks == 1 ? "" : "s")")
                     .font(.caption)
@@ -89,15 +87,12 @@ struct QuizView: View {
                             .foregroundStyle(result.correct ? Color.green : Color.red)
 
                         if !result.feedback.isEmpty {
-                            Text(result.feedback)
-                                .font(.footnote)
+                            MathOrText(markdown: result.feedback, fontSize: 12)
                         }
 
                         if !question.answer.isEmpty {
-                            Text("Model answer: \(question.answer)")
-                                .font(.footnote)
+                            MathOrText(markdown: "Model answer: \(question.answer)", fontSize: 12)
                                 .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
                         }
                     }
                 }

@@ -19,6 +19,7 @@ final class PageGeometry: ObservableObject {
     private weak var pdfView: PDFView?
     private var scrollObserver: NSObjectProtocol?
     private var frameObserver: NSObjectProtocol?
+    private var refreshScheduled = false
 
     func attach(_ pdfView: PDFView) {
         detach()
@@ -31,7 +32,7 @@ final class PageGeometry: ObservableObject {
                 object: scrollView.contentView,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
+                Task { @MainActor in self?.scheduleRefresh() }
             }
         }
 
@@ -40,10 +41,20 @@ final class PageGeometry: ObservableObject {
             object: pdfView,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.scheduleRefresh() }
         }
 
         refresh()
+    }
+
+    /// Coalesces bursts of scroll/layout notifications into one pass per run loop.
+    private func scheduleRefresh() {
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshScheduled = false
+            self?.refresh()
+        }
     }
 
     func detach() {
@@ -93,8 +104,6 @@ struct PageNotesPanel: View {
     @StateObject private var geometry = PageGeometry()
     @State private var editingPages: Set<Int> = []
 
-    private let width: CGFloat = 260
-
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
@@ -129,9 +138,20 @@ struct PageNotesPanel: View {
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
         }
-        .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .underPageBackgroundColor))
+        .overlay(alignment: .topTrailing) {
+            Button {
+                store.showAnnotations = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .help("Hide notes")
+        }
         .onAppear { geometry.attach(tab.pdfView) }
         .onDisappear { geometry.detach() }
     }
@@ -168,7 +188,7 @@ struct PageNotesPanel: View {
                     .scrollContentBackground(.hidden)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                MarkdownText(text: note)
+                MathOrMarkdown(markdown: note)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
