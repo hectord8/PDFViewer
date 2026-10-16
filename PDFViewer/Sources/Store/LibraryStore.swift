@@ -25,6 +25,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var pinnedTabIDs: Set<UUID> = []
     @Published private(set) var recentlyClosed: [ClosedTab] = []
 
+    @Published private(set) var quizzes: [QuizTab] = []
+    @Published var selectedQuizID: UUID?
+
     @Published private var findBarTabID: UUID?
 
     private var didRestoreSession = false
@@ -41,6 +44,13 @@ final class LibraryStore: ObservableObject {
     }
 
     var isSplit: Bool { secondaryTab != nil }
+
+    var selectedQuizTab: QuizTab? {
+        guard let selectedQuizID else { return nil }
+        return quizzes.first { $0.id == selectedQuizID }
+    }
+
+    var isQuizActive: Bool { selectedQuizTab != nil }
 
     var activeTab: PDFDocumentTab? {
         if isSplit, focusedPane == .secondary, let secondaryTab { return secondaryTab }
@@ -166,6 +176,7 @@ final class LibraryStore: ObservableObject {
     // MARK: - Tabs
 
     func select(_ tab: PDFDocumentTab) {
+        selectedQuizID = nil
         if isSplit {
             if tab.id == selectedTabID {
                 focusedPane = .primary
@@ -197,6 +208,34 @@ final class LibraryStore: ObservableObject {
         let count = tabs.count
         let next = ((index + offset) % count + count) % count
         select(tabs[next])
+    }
+
+    // MARK: - Quizzes
+
+    func openQuiz(_ tab: QuizTab) {
+        quizzes.append(tab)
+        if isSplit {
+            secondaryTabID = nil
+            focusedPane = .primary
+        }
+        selectedQuizID = tab.id
+    }
+
+    func selectQuiz(_ tab: QuizTab) {
+        guard quizzes.contains(where: { $0.id == tab.id }) else { return }
+        if isSplit {
+            secondaryTabID = nil
+            focusedPane = .primary
+        }
+        selectedQuizID = tab.id
+    }
+
+    func closeQuiz(_ tab: QuizTab) {
+        guard let index = quizzes.firstIndex(where: { $0.id == tab.id }) else { return }
+        quizzes.remove(at: index)
+        if selectedQuizID == tab.id {
+            selectedQuizID = nil
+        }
     }
 
     // MARK: - Split view

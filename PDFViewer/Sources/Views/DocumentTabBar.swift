@@ -20,6 +20,11 @@ struct DocumentTabBar: View {
                             }
                         }
 
+                        ForEach(store.quizzes) { quiz in
+                            quizTabButton(for: quiz)
+                                .id(quiz.id)
+                        }
+
                         Button {
                             store.presentOpenPanel()
                         } label: {
@@ -37,6 +42,10 @@ struct DocumentTabBar: View {
                     .padding(.vertical, 6)
                 }
                 .onChange(of: store.selectedTabID) { _, newValue in
+                    guard let newValue else { return }
+                    withAnimation { proxy.scrollTo(newValue, anchor: .center) }
+                }
+                .onChange(of: store.selectedQuizID) { _, newValue in
                     guard let newValue else { return }
                     withAnimation { proxy.scrollTo(newValue, anchor: .center) }
                 }
@@ -139,6 +148,62 @@ struct DocumentTabBar: View {
         .buttonStyle(.plain)
         .help(tab.title)
         .contextMenu { tabMenu(for: tab) }
+    }
+
+    private func quizTabButton(for quiz: QuizTab) -> some View {
+        let isFocusedTab = store.selectedQuizID == quiz.id
+
+        return Button {
+            store.selectQuiz(quiz)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isFocusedTab ? Color.accentColor : .secondary)
+
+                Text(quiz.title)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .foregroundStyle(isFocusedTab ? Color.primary : .secondary)
+            }
+            .padding(.leading, 9)
+            .padding(.trailing, 26)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
+                    .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(quiz.title)
+        .contextMenu {
+            Button("Close Tab") {
+                store.closeQuiz(quiz)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                store.closeQuiz(quiz)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(isFocusedTab ? 1 : 0.55))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help("Close this tab")
+        }
     }
 
     @ViewBuilder

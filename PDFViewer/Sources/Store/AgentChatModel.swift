@@ -79,6 +79,8 @@ final class AgentChatModel: ObservableObject {
     private static let addressKey = "openCodeServerAddress"
     private static let modelKey = "openCodeModelOverride"
 
+    private let library = LibraryStore.shared
+
     private var sessionID: String?
     private var client: OpenCodeClient?
     private var serverProcess: Process?
@@ -292,6 +294,11 @@ final class AgentChatModel: ObservableObject {
         let attached = context
         messages.append(ChatMessage(role: .user, text: prompt, attachedContext: attached))
 
+        if Self.looksLikeQuiz(prompt) {
+            await performQuiz(prompt: prompt, context: attached, client: client)
+            return
+        }
+
         let modelName = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         log("Sending request\(modelName.isEmpty ? "" : " (model \(modelName))")…")
 
@@ -316,6 +323,214 @@ final class AgentChatModel: ObservableObject {
     func newChat() {
         sessionID = nil
         messages.removeAll()
+    }
+
+    // MARK: - Quizzes
+
+    static func looksLikeQuiz(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        if lower.contains("test me") || lower.contains("practice questions") {
+            return true
+        }
+        return lower.split(whereSeparator: { !$0.isLetter }).contains("quiz")
+    }
+
+    /// Asks opencode for quiz questions, then opens the result as a new tab.
+    private func performQuiz(prompt: String, context: String?, client: OpenCodeClient) async {
+        log("Quiz request detected — asking opencode for questions…")
+
+        do {
+            let session = try await ensureSession(client: client)
+            let request = Self.quizGenerationRequest(prompt: prompt, context: context)
+            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+
+            guard let quiz = Self.parseQuiz(reply) else {
+                log("Couldn’t read quiz JSON — showing the reply as a normal answer.")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                        attachedContext: nil
+                    )
+                )
+                return
+            }
+
+            let title = Self.quizTitle(document: library.activeTab?.title, model: quiz.title)
+            let tab = QuizTab(title: title, questions: quiz.questions)
+            library.openQuiz(tab)
+
+            log("Created quiz “\(title)” with \(tab.questions.count) questions.")
+            messages.append(
+                ChatMessage(
+                    role: .assistant,
+                    text: "Created the quiz “\(title)” with \(tab.questions.count) question\(tab.questions.count == 1 ? "" : "s"). Answer in the new tab, then press “Mark quiz”.",
+                    attachedContext: nil
+                )
+            )
+        } catch {
+            log("Quiz request failed — \(Self.describe(error))")
+            messages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
+        }
+    }
+
+    /// Sends the reader's answers to opencode and records the per-question marks.
+    func mark(_ quiz: QuizTab) async {
+        guard !quiz.isMarking, !quiz.marked else { return }
+        guard let client else {
+            log("Can’t mark — not connected to opencode.")
+            return
+        }
+
+        quiz.isMarking = true
+        defer { quiz.isMarking = false }
+        log("Marking quiz “\(quiz.title)”…")
+
+        do {
+            let session = try await ensureSession(client: client)
+            let request = Self.quizGradingRequest(quiz: quiz)
+            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+
+            guard let results = Self.parseGrading(reply, questions: quiz.questions) else {
+                log("Couldn’t read the marking result — try again.")
+                return
+            }
+
+            quiz.results = results
+            quiz.marked = true
+            log("Marked “\(quiz.title)” — \(results.filter(\.correct).count)/\(quiz.questions.count) correct.")
+        } catch {
+            log("Marking failed — \(Self.describe(error))")
+        }
+    }
+
+    private struct ParsedQuiz {
+        let title: String?
+        let questions: [QuizQuestion]
+    }
+
+    private struct QuizPayload: Decodable {
+        struct Item: Decodable {
+            let question: String?
+            let answer: String?
+            let marks: Int?
+        }
+        let title: String?
+        let questions: [Item]?
+    }
+
+    private struct GradePayload: Decodable {
+        struct Item: Decodable {
+            let index: Int?
+            let correct: Bool?
+            let awarded: Int?
+            let feedback: String?
+        }
+        let results: [Item]?
+    }
+
+    private static func parseQuiz(_ text: String) -> ParsedQuiz? {
+        guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(QuizPayload.self, from: data) else {
+            return nil
+        }
+
+        let questions = (payload.questions ?? []).compactMap { item -> QuizQuestion? in
+            guard let prompt = item.question?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !prompt.isEmpty else { return nil }
+            return QuizQuestion(
+                prompt: prompt,
+                answer: item.answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                marks: max(1, item.marks ?? 1)
+            )
+        }
+
+        guard !questions.isEmpty else { return nil }
+        return ParsedQuiz(title: payload.title, questions: questions)
+    }
+
+    private static func parseGrading(_ text: String, questions: [QuizQuestion]) -> [QuizResult]? {
+        guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(GradePayload.self, from: data),
+              let items = payload.results, !items.isEmpty else {
+            return nil
+        }
+
+        var results: [QuizResult] = []
+        for (position, item) in items.enumerated() {
+            let index = item.index ?? (position + 1)
+            guard index >= 1, index <= questions.count else { continue }
+            let marks = questions[index - 1].marks
+            let correct = item.correct ?? false
+            let awarded = min(max(item.awarded ?? (correct ? marks : 0), 0), marks)
+            results.append(
+                QuizResult(
+                    index: index,
+                    correct: correct,
+                    awarded: awarded,
+                    feedback: item.feedback?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                )
+            )
+        }
+
+        return results.isEmpty ? nil : results
+    }
+
+    private static func jsonObject(in text: String) -> String? {
+        guard let start = text.firstIndex(of: "{"),
+              let end = text.lastIndex(of: "}"),
+              start < end else { return nil }
+        return String(text[start...end])
+    }
+
+    private static func quizTitle(document: String?, model: String?) -> String {
+        if let document = document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
+            let base = document.hasSuffix("-quiz") ? String(document.dropLast(5)) : document
+            return "\(base)-quiz"
+        }
+        if let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
+            return model.hasSuffix("-quiz") ? model : "\(model)-quiz"
+        }
+        return "quiz"
+    }
+
+    private static func quizGenerationRequest(prompt: String, context: String?) -> String {
+        var request = """
+        Create a short quiz that tests understanding of the material. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        {"title": "Quiz title", "questions": [{"question": "The question text", "answer": "A concise model answer used for marking", "marks": 1}]}
+        Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
+        """
+
+        if let context, !context.isEmpty {
+            request += """
+
+            [Material]
+            \(context)
+            [End material]
+            """
+        }
+
+        return request + "\n\nRequest: \(prompt)"
+    }
+
+    private static func quizGradingRequest(quiz: QuizTab) -> String {
+        var lines: [String] = []
+        for (index, question) in quiz.questions.enumerated() {
+            let student = quiz.answers.indices.contains(index) ? quiz.answers[index] : ""
+            lines.append("""
+            Question \(index + 1) (worth \(question.marks) mark\(question.marks == 1 ? "" : "s")):
+            Q: \(question.prompt)
+            Model answer: \(question.answer)
+            Student answer: \(student.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(no answer)" : student)
+            """)
+        }
+
+        return """
+        Mark this quiz. For each question decide whether the student's answer is correct, award an integer from 0 to the question's marks, and give one short sentence of feedback. Be tolerant of different wording; an empty answer is incorrect. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        {"results": [{"index": 1, "correct": true, "awarded": 1, "feedback": "why"}]}
+
+        \(lines.joined(separator: "\n\n"))
+        """
     }
 
     // MARK: - Input history (up/down arrows)

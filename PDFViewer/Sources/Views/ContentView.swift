@@ -43,7 +43,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let primary = store.selectedTab {
+        if let quiz = store.selectedQuizTab {
+            QuizView(tab: quiz)
+                .id(quiz.id)
+        } else if let primary = store.selectedTab {
             if let secondary = store.secondaryTab {
                 SplitLayout(primary: primary, secondary: secondary)
             } else {
@@ -58,7 +61,7 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if let tab = store.activeTab {
+        if let tab = store.activeTab, !store.isQuizActive {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
                     store.toggleThumbnails()

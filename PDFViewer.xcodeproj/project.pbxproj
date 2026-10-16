@@ -24,6 +24,8 @@
 		AA00000000000000000000B1 /* AgentChatModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A1 /* AgentChatModel.swift */; };
 		AA00000000000000000000B2 /* OpenCodeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A2 /* OpenCodeClient.swift */; };
 		AA00000000000000000000B3 /* AgentChatPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A3 /* AgentChatPanel.swift */; };
+		AA00000000000000000000B4 /* QuizTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A4 /* QuizTab.swift */; };
+		AA00000000000000000000B5 /* QuizView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A5 /* QuizView.swift */; };
 		D4BACBF2F94D95C59BA98E50 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -46,6 +48,8 @@
 		AA00000000000000000000A1 /* AgentChatModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentChatModel.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000A2 /* OpenCodeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OpenCodeClient.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000A3 /* AgentChatPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentChatPanel.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000A4 /* QuizTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "QuizTab.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000A5 /* QuizView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "QuizView.swift"; sourceTree = "<group>"; };
 		6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -102,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				20AC57FE0E6E6424D0E4FE0F /* PDFDocumentTab.swift */,
+				AA00000000000000000000A4 /* QuizTab.swift */,
 				96A05779CB8F0BEEE2177EBA /* Session.swift */,
 			);
 			path = Model;
@@ -127,6 +132,7 @@
 				F143F3D701A001C7D82FC56D /* FindBar.swift */,
 				790D903ED602E79F1045A82F /* FitWidthPDFView.swift */,
 				B884E167C35B746AE4FF4680 /* PDFViewerPane.swift */,
+				AA00000000000000000000A5 /* QuizView.swift */,
 				AF1D11E172DA03A366C2E27A /* ThumbnailSidebar.swift */,
 				0F38F7D9009CB391A159D308 /* WelcomeView.swift */,
 			);
@@ -222,6 +228,7 @@
 				B47A1212E2090A278D39A5FF /* MainMenuTweaks.swift in Sources */,
 				7F4EC69FB374DC16C2E3C1E1 /* PDFViewerApp.swift in Sources */,
 				E72E79B37B596ED323CA15AA /* PDFDocumentTab.swift in Sources */,
+				AA00000000000000000000B4 /* QuizTab.swift in Sources */,
 				FCBD4F2BAE24553BACD24F56 /* Session.swift in Sources */,
 				4CD1CBC985BC155664D777F3 /* LibraryStore.swift in Sources */,
 				8DC3D38B039383E8B96F3D45 /* SessionStore.swift in Sources */,
@@ -233,6 +240,7 @@
 				5608D61BCAEA3B385AF63EC1 /* FindBar.swift in Sources */,
 				E1EAF35E6AB2374036269A12 /* FitWidthPDFView.swift in Sources */,
 				73DFD9614A28861AF091EF19 /* PDFViewerPane.swift in Sources */,
+				AA00000000000000000000B5 /* QuizView.swift in Sources */,
 				B54C5B84F2CA52709E5C23B4 /* ThumbnailSidebar.swift in Sources */,
 				510138CC4BC0D429CF1D39E2 /* WelcomeView.swift in Sources */,
 			);
