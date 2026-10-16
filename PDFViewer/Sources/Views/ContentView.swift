@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: LibraryStore
+    @EnvironmentObject private var agent: AgentChatModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +28,8 @@ struct ContentView: View {
         }
         .frame(minWidth: 760, minHeight: 520)
         .toolbar { toolbarContent }
+        .onAppear { agent.refreshSavedDecks() }
+        .onChange(of: store.showAgentPanel) { _, _ in agent.refreshSavedDecks() }
         .alert(
             "Couldn’t Open File",
             isPresented: Binding(
@@ -43,7 +46,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let quiz = store.selectedQuizTab {
+        if let deck = store.selectedFlashcardTab {
+            FlashcardView(tab: deck)
+                .id(deck.id)
+        } else if let quiz = store.selectedQuizTab {
             QuizView(tab: quiz)
                 .id(quiz.id)
         } else if let primary = store.selectedTab {
@@ -61,7 +67,7 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if let tab = store.activeTab, !store.isQuizActive {
+        if let tab = store.activeTab, !store.isGeneratedTabActive {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
                     store.toggleThumbnails()

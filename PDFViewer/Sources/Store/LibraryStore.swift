@@ -28,6 +28,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var quizzes: [QuizTab] = []
     @Published var selectedQuizID: UUID?
 
+    @Published private(set) var flashcards: [FlashcardTab] = []
+    @Published var selectedFlashcardID: UUID?
+
     @Published private var findBarTabID: UUID?
 
     private var didRestoreSession = false
@@ -50,7 +53,14 @@ final class LibraryStore: ObservableObject {
         return quizzes.first { $0.id == selectedQuizID }
     }
 
+    var selectedFlashcardTab: FlashcardTab? {
+        guard let selectedFlashcardID else { return nil }
+        return flashcards.first { $0.id == selectedFlashcardID }
+    }
+
     var isQuizActive: Bool { selectedQuizTab != nil }
+    var isFlashcardActive: Bool { selectedFlashcardTab != nil }
+    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive }
 
     var activeTab: PDFDocumentTab? {
         if isSplit, focusedPane == .secondary, let secondaryTab { return secondaryTab }
@@ -177,6 +187,7 @@ final class LibraryStore: ObservableObject {
 
     func select(_ tab: PDFDocumentTab) {
         selectedQuizID = nil
+        selectedFlashcardID = nil
         if isSplit {
             if tab.id == selectedTabID {
                 focusedPane = .primary
@@ -214,19 +225,15 @@ final class LibraryStore: ObservableObject {
 
     func openQuiz(_ tab: QuizTab) {
         quizzes.append(tab)
-        if isSplit {
-            secondaryTabID = nil
-            focusedPane = .primary
-        }
+        collapseSplitForGeneratedTab()
+        selectedFlashcardID = nil
         selectedQuizID = tab.id
     }
 
     func selectQuiz(_ tab: QuizTab) {
         guard quizzes.contains(where: { $0.id == tab.id }) else { return }
-        if isSplit {
-            secondaryTabID = nil
-            focusedPane = .primary
-        }
+        collapseSplitForGeneratedTab()
+        selectedFlashcardID = nil
         selectedQuizID = tab.id
     }
 
@@ -235,6 +242,37 @@ final class LibraryStore: ObservableObject {
         quizzes.remove(at: index)
         if selectedQuizID == tab.id {
             selectedQuizID = nil
+        }
+    }
+
+    // MARK: - Flashcards
+
+    func openFlashcard(_ tab: FlashcardTab) {
+        flashcards.append(tab)
+        collapseSplitForGeneratedTab()
+        selectedQuizID = nil
+        selectedFlashcardID = tab.id
+    }
+
+    func selectFlashcard(_ tab: FlashcardTab) {
+        guard flashcards.contains(where: { $0.id == tab.id }) else { return }
+        collapseSplitForGeneratedTab()
+        selectedQuizID = nil
+        selectedFlashcardID = tab.id
+    }
+
+    func closeFlashcard(_ tab: FlashcardTab) {
+        guard let index = flashcards.firstIndex(where: { $0.id == tab.id }) else { return }
+        flashcards.remove(at: index)
+        if selectedFlashcardID == tab.id {
+            selectedFlashcardID = nil
+        }
+    }
+
+    private func collapseSplitForGeneratedTab() {
+        if isSplit {
+            secondaryTabID = nil
+            focusedPane = .primary
         }
     }
 

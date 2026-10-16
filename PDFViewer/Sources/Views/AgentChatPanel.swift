@@ -372,6 +372,16 @@ struct AgentChatPanel: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.callout)
 
+            HStack(spacing: 6) {
+                TextField("Flashcard folder", text: $model.flashcardFolder)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout)
+                Button("Choose…") {
+                    model.chooseFlashcardFolder()
+                }
+                .controlSize(.small)
+            }
+
             HStack {
                 Button("Connect") {
                     Task { await model.connect() }

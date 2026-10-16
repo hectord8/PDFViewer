@@ -45,6 +45,27 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
             .disabled(!store.canReopenClosedTab)
+
+            Divider()
+
+            Menu("Open Flashcard Deck") {
+                if agent.savedDecks.isEmpty {
+                    Button("No saved decks") {}
+                        .disabled(true)
+                } else {
+                    ForEach(agent.savedDecks) { deck in
+                        Button("\(deck.title) · \(deck.cardCount) cards") {
+                            agent.openSavedDeck(deck)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Refresh List") {
+                    agent.refreshSavedDecks()
+                }
+            }
         }
 
         CommandMenu("View") {

@@ -75,9 +75,17 @@ final class AgentChatModel: ObservableObject {
     @Published var modelOverride: String {
         didSet { UserDefaults.standard.set(modelOverride, forKey: Self.modelKey) }
     }
+    @Published var flashcardFolder: String {
+        didSet {
+            UserDefaults.standard.set(flashcardFolder, forKey: Self.flashcardFolderKey)
+            refreshSavedDecks()
+        }
+    }
+    @Published private(set) var savedDecks: [SavedDeck] = []
 
     private static let addressKey = "openCodeServerAddress"
     private static let modelKey = "openCodeModelOverride"
+    private static let flashcardFolderKey = "flashcardFolder"
 
     private let library = LibraryStore.shared
 
@@ -101,6 +109,11 @@ final class AgentChatModel: ObservableObject {
     private init() {
         serverAddress = UserDefaults.standard.string(forKey: Self.addressKey) ?? "http://127.0.0.1:4096"
         modelOverride = UserDefaults.standard.string(forKey: Self.modelKey) ?? Self.defaultModel
+        flashcardFolder = UserDefaults.standard.string(forKey: Self.flashcardFolderKey) ?? Self.defaultFlashcardFolder
+    }
+
+    private static var defaultFlashcardFolder: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Flashcards")
     }
 
     var canSend: Bool {
@@ -293,6 +306,11 @@ final class AgentChatModel: ObservableObject {
 
         let attached = context
         messages.append(ChatMessage(role: .user, text: prompt, attachedContext: attached))
+
+        if Self.looksLikeFlashcards(prompt) {
+            await performFlashcards(prompt: prompt, context: attached, client: client)
+            return
+        }
 
         if Self.looksLikeQuiz(prompt) {
             await performQuiz(prompt: prompt, context: attached, client: client)
@@ -531,6 +549,275 @@ final class AgentChatModel: ObservableObject {
 
         \(lines.joined(separator: "\n\n"))
         """
+    }
+
+    // MARK: - Flashcards
+
+    struct SavedDeck: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let url: URL
+        let cardCount: Int
+        let modified: Date
+    }
+
+    /// Rescans the flashcard folder for decks (subfolders containing `deck.json`).
+    func refreshSavedDecks() {
+        let root = URL(
+            fileURLWithPath: (flashcardFolder as NSString).expandingTildeInPath,
+            isDirectory: true
+        )
+        let fileManager = FileManager.default
+
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            savedDecks = []
+            return
+        }
+
+        var decks: [SavedDeck] = []
+        for entry in entries {
+            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+            guard values?.isDirectory == true else { continue }
+
+            let deckFile = entry.appendingPathComponent("deck.json")
+            guard let data = try? Data(contentsOf: deckFile),
+                  let decoded = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+                continue
+            }
+
+            decks.append(
+                SavedDeck(
+                    id: entry.path,
+                    title: decoded.title,
+                    url: entry,
+                    cardCount: decoded.cards.count,
+                    modified: values?.contentModificationDate ?? .distantPast
+                )
+            )
+        }
+
+        savedDecks = decks.sorted { $0.modified > $1.modified }
+    }
+
+    func openSavedDeck(_ deck: SavedDeck) {
+        guard let data = try? Data(contentsOf: deck.url.appendingPathComponent("deck.json")),
+              let file = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+            log("Couldn’t read \(deck.url.path)/deck.json")
+            return
+        }
+
+        let cards = file.cards.map { Flashcard(front: $0.front, back: $0.back) }
+        library.openFlashcard(FlashcardTab(title: file.title, cards: cards, deckURL: deck.url))
+        log("Opened deck “\(file.title)” (\(cards.count) cards).")
+    }
+
+    static func looksLikeFlashcards(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        if lower.contains("flash card") || lower.contains("flash cards") || lower.contains("flip card") {
+            return true
+        }
+        return lower
+            .split(whereSeparator: { !$0.isLetter })
+            .contains { $0 == "flashcard" || $0 == "flashcards" || $0 == "anki" }
+    }
+
+    func chooseFlashcardFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose where flashcard decks are saved"
+        panel.prompt = "Choose"
+        panel.directoryURL = URL(fileURLWithPath: (flashcardFolder as NSString).expandingTildeInPath)
+
+        if panel.runModal() == .OK, let url = panel.url {
+            flashcardFolder = url.path
+            log("Flashcard folder set to \(url.path).")
+        }
+    }
+
+    /// Asks opencode for flashcards, saves the deck to disk, and opens it in a tab.
+    private func performFlashcards(prompt: String, context: String?, client: OpenCodeClient) async {
+        log("Flashcard request detected — asking opencode for cards…")
+
+        do {
+            let session = try await ensureSession(client: client)
+            let request = Self.flashcardGenerationRequest(prompt: prompt, context: context)
+            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+
+            guard let deck = Self.parseFlashcards(reply) else {
+                log("Couldn’t read flashcard JSON — showing the reply as a normal answer.")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                        attachedContext: nil
+                    )
+                )
+                return
+            }
+
+            let title = Self.deckTitle(document: library.activeTab?.title, model: deck.title, prompt: prompt)
+            let savedURL = writeDeck(title: title, cards: deck.cards)
+            let tab = FlashcardTab(title: title, cards: deck.cards, deckURL: savedURL)
+            library.openFlashcard(tab)
+            refreshSavedDecks()
+
+            if let savedURL {
+                log("Saved \(deck.cards.count) cards to \(savedURL.path).")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: "Created \(deck.cards.count) flashcards and saved them to “\(savedURL.path)”. They’re open in a new tab.",
+                        attachedContext: nil
+                    )
+                )
+            } else {
+                log("Created flashcards but couldn’t save them to \(flashcardFolder).")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: "Created \(deck.cards.count) flashcards in a new tab, but saving them to “\(flashcardFolder)” failed. Check the folder in settings.",
+                        attachedContext: nil
+                    )
+                )
+            }
+        } catch {
+            log("Flashcard request failed — \(Self.describe(error))")
+            messages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
+        }
+    }
+
+    private func writeDeck(title: String, cards: [Flashcard]) -> URL? {
+        let base = (flashcardFolder as NSString).expandingTildeInPath
+        guard !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+
+        let root = URL(fileURLWithPath: base, isDirectory: true)
+        let fileManager = FileManager.default
+
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            let deckURL = Self.uniqueURL(in: root, slug: Self.slug(title))
+            try fileManager.createDirectory(at: deckURL, withIntermediateDirectories: true)
+
+            let deckFile = FlashcardDeckFile(
+                title: title,
+                cards: cards.map { .init(front: $0.front, back: $0.back) }
+            )
+
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(deckFile).write(to: deckURL.appendingPathComponent("deck.json"))
+
+            if let markdown = Self.markdown(for: deckFile).data(using: .utf8) {
+                try markdown.write(to: deckURL.appendingPathComponent("cards.md"))
+            }
+
+            return deckURL
+        } catch {
+            log("Writing the deck failed — \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private struct ParsedFlashcards {
+        let title: String?
+        let cards: [Flashcard]
+    }
+
+    private struct FlashcardPayload: Decodable {
+        struct Item: Decodable {
+            let front: String?
+            let back: String?
+        }
+        let title: String?
+        let cards: [Item]?
+    }
+
+    private struct FlashcardDeckFile: Codable {
+        struct Card: Codable {
+            let front: String
+            let back: String
+        }
+        let title: String
+        let cards: [Card]
+    }
+
+    private static func parseFlashcards(_ text: String) -> ParsedFlashcards? {
+        guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(FlashcardPayload.self, from: data) else {
+            return nil
+        }
+
+        let cards = (payload.cards ?? []).compactMap { item -> Flashcard? in
+            guard let front = item.front?.trimmingCharacters(in: .whitespacesAndNewlines), !front.isEmpty,
+                  let back = item.back?.trimmingCharacters(in: .whitespacesAndNewlines), !back.isEmpty else {
+                return nil
+            }
+            return Flashcard(front: front, back: back)
+        }
+
+        guard !cards.isEmpty else { return nil }
+        return ParsedFlashcards(title: payload.title, cards: cards)
+    }
+
+    private static func uniqueURL(in root: URL, slug: String) -> URL {
+        let fileManager = FileManager.default
+        var candidate = root.appendingPathComponent(slug, isDirectory: true)
+        var suffix = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = root.appendingPathComponent("\(slug)-\(suffix)", isDirectory: true)
+            suffix += 1
+        }
+        return candidate
+    }
+
+    private static func slug(_ text: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        let replaced = text.lowercased().unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let collapsed = String(replaced).split(separator: "-").joined(separator: "-")
+        return collapsed.isEmpty ? "deck" : String(collapsed.prefix(60))
+    }
+
+    private static func markdown(for deck: FlashcardDeckFile) -> String {
+        var lines = ["# \(deck.title)", ""]
+        for (index, card) in deck.cards.enumerated() {
+            lines.append("**\(index + 1). \(card.front)**")
+            lines.append("")
+            lines.append(card.back)
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func deckTitle(document: String?, model: String?, prompt: String) -> String {
+        if let document = document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
+            return "\(document) Flashcards"
+        }
+        if let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
+            return model
+        }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Flashcards" : trimmed
+    }
+
+    private static func flashcardGenerationRequest(prompt: String, context: String?) -> String {
+        var request = """
+        Create a set of flashcards. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        {"title": "Deck title", "cards": [{"front": "prompt or question", "back": "answer"}]}
+        Write 10 cards unless the request says otherwise. Keep each side short and focused.
+        """
+
+        if let context, !context.isEmpty {
+            request += "\n\n[Material]\n\(context)\n[End material]"
+        }
+
+        return request + "\n\nRequest: \(prompt)"
     }
 
     // MARK: - Input history (up/down arrows)
