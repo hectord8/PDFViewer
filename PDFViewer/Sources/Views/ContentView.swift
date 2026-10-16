@@ -12,6 +12,12 @@ struct ContentView: View {
             Divider()
 
             HStack(spacing: 0) {
+                if store.showLibrary {
+                    LibrarySidebar()
+                        .frame(width: 240)
+                    Divider()
+                }
+
                 if store.showAnnotations, !store.isGeneratedTabActive, let tab = store.selectedTab {
                     PageNotesPanel(tab: tab)
                         .id("annotation-\(tab.id)")
@@ -92,6 +98,13 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         if let tab = store.activeTab, !store.isGeneratedTabActive {
             ToolbarItemGroup(placement: .navigation) {
+                Button {
+                    store.toggleLibrary()
+                } label: {
+                    Image(systemName: "books.vertical")
+                }
+                .help("Show or hide the library")
+
                 Button {
                     store.toggleThumbnails()
                 } label: {

@@ -17,6 +17,7 @@ final class LibraryStore: ObservableObject {
     @Published var showThumbnails = true
     @Published var showAgentPanel = false
     @Published var showAnnotations = false
+    @Published var showLibrary = false
     @Published var errorMessage: String?
 
     @Published var secondaryTabID: UUID?
@@ -591,6 +592,10 @@ final class LibraryStore: ObservableObject {
 
     func toggleAnnotations() {
         showAnnotations.toggle()
+    }
+
+    func toggleLibrary() {
+        showLibrary.toggle()
     }
 
     func zoomIn() {

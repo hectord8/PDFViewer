@@ -3,6 +3,7 @@ import SwiftUI
 struct DocumentTabBar: View {
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
+    @EnvironmentObject private var workbooks: WorkbookStore
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,6 +61,9 @@ struct DocumentTabBar: View {
                                             agent.openSavedDeck(deck)
                                         }
                                         Divider()
+                                        addToWorkbookMenu(
+                                            item: workbooks.makeItem(kind: .deck, title: deck.title, url: deck.url)
+                                        )
                                         Button("Rename…") {
                                             agent.promptRenameDeck(deck)
                                         }
@@ -96,6 +100,9 @@ struct DocumentTabBar: View {
                                             agent.openSavedSummary(summary)
                                         }
                                         Divider()
+                                        addToWorkbookMenu(
+                                            item: workbooks.makeItem(kind: .summary, title: summary.title, url: summary.url)
+                                        )
                                         Button("Rename…") {
                                             agent.promptRenameSummary(summary)
                                         }
@@ -410,6 +417,22 @@ struct DocumentTabBar: View {
     }
 
     @ViewBuilder
+    private func addToWorkbookMenu(item: WorkbookItem) -> some View {
+        Menu("Add to Workbook") {
+            if workbooks.workbooks.isEmpty {
+                Button("No workbooks") {}
+                    .disabled(true)
+            } else {
+                ForEach(workbooks.workbooks) { workbook in
+                    Button(workbook.name) {
+                        workbooks.add(item, to: workbook.id)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func tabMenu(for tab: PDFDocumentTab) -> some View {
         let isPaneTab = store.selectedTabID == tab.id || store.secondaryTabID == tab.id
 
@@ -424,6 +447,8 @@ struct DocumentTabBar: View {
         Button("Duplicate") {
             store.duplicate(tab)
         }
+
+        addToWorkbookMenu(item: workbooks.makeItem(kind: .pdf, title: tab.title, url: tab.url))
 
         Button(store.isPinned(tab) ? "Unpin Tab" : "Pin Tab") {
             store.togglePin(tab)

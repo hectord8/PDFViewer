@@ -6,12 +6,14 @@ struct PDFViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = LibraryStore.shared
     @StateObject private var agent = AgentChatModel.shared
+    @StateObject private var workbooks = WorkbookStore.shared
 
     var body: some Scene {
         WindowGroup("PDF Viewer") {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(agent)
+                .environmentObject(workbooks)
                 .onAppear {
                     // SwiftUI installs its own "Close" (Cmd+W) item that closes the window.
                     // We clear it once so our Cmd+W "Close Tab" item is the only Cmd+W.
@@ -59,6 +61,14 @@ struct PDFViewerApp: App {
                                 agent.openSavedDeck(deck)
                             }
                             Divider()
+                            Menu("Add to Workbook") {
+                                ForEach(workbooks.workbooks) { workbook in
+                                    Button(workbook.name) {
+                                        workbooks.add(workbooks.makeItem(kind: .deck, title: deck.title, url: deck.url), to: workbook.id)
+                                    }
+                                }
+                            }
+                            .disabled(workbooks.workbooks.isEmpty)
                             Button("Rename…") {
                                 agent.promptRenameDeck(deck)
                             }
@@ -87,6 +97,14 @@ struct PDFViewerApp: App {
                                 agent.openSavedSummary(summary)
                             }
                             Divider()
+                            Menu("Add to Workbook") {
+                                ForEach(workbooks.workbooks) { workbook in
+                                    Button(workbook.name) {
+                                        workbooks.add(workbooks.makeItem(kind: .summary, title: summary.title, url: summary.url), to: workbook.id)
+                                    }
+                                }
+                            }
+                            .disabled(workbooks.workbooks.isEmpty)
                             Button("Rename…") {
                                 agent.promptRenameSummary(summary)
                             }
@@ -129,6 +147,11 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("n", modifiers: [.command, .option])
             .disabled(store.selectedTab == nil)
+
+            Button(store.showLibrary ? "Hide Library" : "Show Library") {
+                store.toggleLibrary()
+            }
+            .keyboardShortcut("l", modifiers: [.command, .option])
 
             Divider()
 
