@@ -3,6 +3,7 @@ import SwiftUI
 
 struct FlashcardView: View {
     @ObservedObject var tab: FlashcardTab
+    @State private var keyMonitor: Any?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,6 +21,62 @@ struct FlashcardView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onAppear { installKeyMonitor() }
+        .onDisappear { removeKeyMonitor() }
+    }
+
+    // MARK: - Hotkeys (H = know, G = still learning, F = don't know, Space = reveal)
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKey(event)
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+        }
+        keyMonitor = nil
+    }
+
+    private func handleKey(_ event: NSEvent) -> NSEvent? {
+        // Let text fields (e.g. the agent chat input) handle their own keys.
+        if let responder = NSApp.keyWindow?.firstResponder,
+           responder is NSTextView || responder is NSTextField {
+            return event
+        }
+
+        // Don't swallow menu shortcuts or other modified keys.
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+        guard modifiers.isEmpty else { return event }
+
+        guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else {
+            return event
+        }
+
+        switch key {
+        case " ":
+            tab.flip()
+            return nil
+        case "h":
+            rate(.know)
+            return nil
+        case "g":
+            rate(.stillLearning)
+            return nil
+        case "f":
+            rate(.dontKnow)
+            return nil
+        default:
+            return event
+        }
+    }
+
+    private func rate(_ rating: FlashcardRating) {
+        guard tab.current != nil else { return }
+        tab.rate(rating)
     }
 
     private var header: some View {
@@ -123,7 +180,6 @@ struct FlashcardView: View {
                     Label("Don’t know", systemImage: "xmark")
                 }
                 .tint(.red)
-                .keyboardShortcut("f", modifiers: [])
 
                 Button {
                     tab.rate(.stillLearning)
@@ -131,7 +187,6 @@ struct FlashcardView: View {
                     Label("Still learning", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .tint(.orange)
-                .keyboardShortcut("g", modifiers: [])
 
                 Button {
                     tab.rate(.know)
@@ -140,7 +195,6 @@ struct FlashcardView: View {
                 }
                 .tint(.green)
                 .buttonStyle(.borderedProminent)
-                .keyboardShortcut("h", modifiers: [])
             } else {
                 Button {
                     tab.flip()
@@ -148,7 +202,6 @@ struct FlashcardView: View {
                     Label("Show answer", systemImage: "arrow.2.squarepath")
                 }
                 .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.space, modifiers: [])
             }
 
             Spacer()

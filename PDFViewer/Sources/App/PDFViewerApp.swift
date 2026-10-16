@@ -54,8 +54,17 @@ struct PDFViewerApp: App {
                         .disabled(true)
                 } else {
                     ForEach(agent.savedDecks) { deck in
-                        Button("\(deck.title) · \(deck.cardCount) cards") {
-                            agent.openSavedDeck(deck)
+                        Menu("\(deck.title) · \(deck.cardCount) cards") {
+                            Button("Open") {
+                                agent.openSavedDeck(deck)
+                            }
+                            Divider()
+                            Button("Rename…") {
+                                agent.promptRenameDeck(deck)
+                            }
+                            Button("Delete…") {
+                                agent.confirmDeleteDeck(deck)
+                            }
                         }
                     }
                 }
@@ -64,6 +73,34 @@ struct PDFViewerApp: App {
 
                 Button("Refresh List") {
                     agent.refreshSavedDecks()
+                }
+            }
+
+            Menu("Open Summary") {
+                if agent.savedSummaries.isEmpty {
+                    Button("No saved summaries") {}
+                        .disabled(true)
+                } else {
+                    ForEach(agent.savedSummaries) { summary in
+                        Menu(summary.title) {
+                            Button("Open") {
+                                agent.openSavedSummary(summary)
+                            }
+                            Divider()
+                            Button("Rename…") {
+                                agent.promptRenameSummary(summary)
+                            }
+                            Button("Delete…") {
+                                agent.confirmDeleteSummary(summary)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Refresh List") {
+                    agent.refreshSavedSummaries()
                 }
             }
         }

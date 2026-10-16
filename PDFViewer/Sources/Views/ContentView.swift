@@ -28,8 +28,14 @@ struct ContentView: View {
         }
         .frame(minWidth: 760, minHeight: 520)
         .toolbar { toolbarContent }
-        .onAppear { agent.refreshSavedDecks() }
-        .onChange(of: store.showAgentPanel) { _, _ in agent.refreshSavedDecks() }
+        .onAppear {
+            agent.refreshSavedDecks()
+            agent.refreshSavedSummaries()
+        }
+        .onChange(of: store.showAgentPanel) { _, _ in
+            agent.refreshSavedDecks()
+            agent.refreshSavedSummaries()
+        }
         .alert(
             "Couldn’t Open File",
             isPresented: Binding(
@@ -46,7 +52,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let deck = store.selectedFlashcardTab {
+        if let summary = store.selectedSummaryTab {
+            SummaryView(tab: summary)
+                .id(summary.id)
+        } else if let deck = store.selectedFlashcardTab {
             FlashcardView(tab: deck)
                 .id(deck.id)
         } else if let quiz = store.selectedQuizTab {

@@ -31,6 +31,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var flashcards: [FlashcardTab] = []
     @Published var selectedFlashcardID: UUID?
 
+    @Published private(set) var summaries: [SummaryTab] = []
+    @Published var selectedSummaryID: UUID?
+
     @Published private var findBarTabID: UUID?
 
     private var didRestoreSession = false
@@ -58,9 +61,15 @@ final class LibraryStore: ObservableObject {
         return flashcards.first { $0.id == selectedFlashcardID }
     }
 
+    var selectedSummaryTab: SummaryTab? {
+        guard let selectedSummaryID else { return nil }
+        return summaries.first { $0.id == selectedSummaryID }
+    }
+
     var isQuizActive: Bool { selectedQuizTab != nil }
     var isFlashcardActive: Bool { selectedFlashcardTab != nil }
-    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive }
+    var isSummaryActive: Bool { selectedSummaryTab != nil }
+    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive || isSummaryActive }
 
     var activeTab: PDFDocumentTab? {
         if isSplit, focusedPane == .secondary, let secondaryTab { return secondaryTab }
@@ -188,6 +197,7 @@ final class LibraryStore: ObservableObject {
     func select(_ tab: PDFDocumentTab) {
         selectedQuizID = nil
         selectedFlashcardID = nil
+        selectedSummaryID = nil
         if isSplit {
             if tab.id == selectedTabID {
                 focusedPane = .primary
@@ -227,6 +237,7 @@ final class LibraryStore: ObservableObject {
         quizzes.append(tab)
         collapseSplitForGeneratedTab()
         selectedFlashcardID = nil
+        selectedSummaryID = nil
         selectedQuizID = tab.id
     }
 
@@ -234,6 +245,7 @@ final class LibraryStore: ObservableObject {
         guard quizzes.contains(where: { $0.id == tab.id }) else { return }
         collapseSplitForGeneratedTab()
         selectedFlashcardID = nil
+        selectedSummaryID = nil
         selectedQuizID = tab.id
     }
 
@@ -251,6 +263,7 @@ final class LibraryStore: ObservableObject {
         flashcards.append(tab)
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
+        selectedSummaryID = nil
         selectedFlashcardID = tab.id
     }
 
@@ -258,6 +271,7 @@ final class LibraryStore: ObservableObject {
         guard flashcards.contains(where: { $0.id == tab.id }) else { return }
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
+        selectedSummaryID = nil
         selectedFlashcardID = tab.id
     }
 
@@ -267,6 +281,50 @@ final class LibraryStore: ObservableObject {
         if selectedFlashcardID == tab.id {
             selectedFlashcardID = nil
         }
+    }
+
+    func updateFlashcardTitle(deckPath: String, title: String) {
+        flashcards.first { $0.deckURL?.path == deckPath }?.title = title
+    }
+
+    func closeFlashcards(deckPath: String) {
+        let matches = flashcards.filter { $0.deckURL?.path == deckPath }
+        matches.forEach { closeFlashcard($0) }
+    }
+
+    // MARK: - Summaries
+
+    func openSummary(_ tab: SummaryTab) {
+        summaries.append(tab)
+        collapseSplitForGeneratedTab()
+        selectedQuizID = nil
+        selectedFlashcardID = nil
+        selectedSummaryID = tab.id
+    }
+
+    func selectSummary(_ tab: SummaryTab) {
+        guard summaries.contains(where: { $0.id == tab.id }) else { return }
+        collapseSplitForGeneratedTab()
+        selectedQuizID = nil
+        selectedFlashcardID = nil
+        selectedSummaryID = tab.id
+    }
+
+    func closeSummary(_ tab: SummaryTab) {
+        guard let index = summaries.firstIndex(where: { $0.id == tab.id }) else { return }
+        summaries.remove(at: index)
+        if selectedSummaryID == tab.id {
+            selectedSummaryID = nil
+        }
+    }
+
+    func updateSummaryTitle(filePath: String, title: String) {
+        summaries.first { $0.fileURL?.path == filePath }?.title = title
+    }
+
+    func closeSummaries(filePath: String) {
+        let matches = summaries.filter { $0.fileURL?.path == filePath }
+        matches.forEach { closeSummary($0) }
     }
 
     private func collapseSplitForGeneratedTab() {

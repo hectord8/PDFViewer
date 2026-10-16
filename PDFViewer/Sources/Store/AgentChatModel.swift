@@ -83,9 +83,18 @@ final class AgentChatModel: ObservableObject {
     }
     @Published private(set) var savedDecks: [SavedDeck] = []
 
+    @Published var summaryFolder: String {
+        didSet {
+            UserDefaults.standard.set(summaryFolder, forKey: Self.summaryFolderKey)
+            refreshSavedSummaries()
+        }
+    }
+    @Published private(set) var savedSummaries: [SavedSummary] = []
+
     private static let addressKey = "openCodeServerAddress"
     private static let modelKey = "openCodeModelOverride"
     private static let flashcardFolderKey = "flashcardFolder"
+    private static let summaryFolderKey = "summaryFolder"
 
     private let library = LibraryStore.shared
 
@@ -110,10 +119,15 @@ final class AgentChatModel: ObservableObject {
         serverAddress = UserDefaults.standard.string(forKey: Self.addressKey) ?? "http://127.0.0.1:4096"
         modelOverride = UserDefaults.standard.string(forKey: Self.modelKey) ?? Self.defaultModel
         flashcardFolder = UserDefaults.standard.string(forKey: Self.flashcardFolderKey) ?? Self.defaultFlashcardFolder
+        summaryFolder = UserDefaults.standard.string(forKey: Self.summaryFolderKey) ?? Self.defaultSummaryFolder
     }
 
     private static var defaultFlashcardFolder: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Flashcards")
+    }
+
+    private static var defaultSummaryFolder: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Summaries")
     }
 
     var canSend: Bool {
@@ -309,6 +323,11 @@ final class AgentChatModel: ObservableObject {
 
         if Self.looksLikeFlashcards(prompt) {
             await performFlashcards(prompt: prompt, context: attached, client: client)
+            return
+        }
+
+        if Self.looksLikeSummary(prompt) {
+            await performSummary(prompt: prompt, context: attached, client: client)
             return
         }
 
@@ -615,6 +634,95 @@ final class AgentChatModel: ObservableObject {
         log("Opened deck “\(file.title)” (\(cards.count) cards).")
     }
 
+    func promptRenameDeck(_ deck: SavedDeck) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Deck"
+        alert.informativeText = "Enter a new name for “\(deck.title)”."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = deck.title
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            renameDeck(deck, to: field.stringValue)
+        }
+    }
+
+    func confirmDeleteDeck(_ deck: SavedDeck) {
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(deck.title)”?"
+        alert.informativeText = "The deck folder will be moved to the Trash."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            deleteDeck(deck)
+        }
+    }
+
+    private func renameDeck(_ deck: SavedDeck, to newName: String) {
+        refreshSavedDecks()
+        let title = uniqueDeckTitle(newName, excluding: deck.url)
+
+        let deckFile = deck.url.appendingPathComponent("deck.json")
+        guard let data = try? Data(contentsOf: deckFile),
+              let existing = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+            log("Couldn’t read \(deckFile.path)")
+            return
+        }
+
+        let renamed = FlashcardDeckFile(title: title, cards: existing.cards)
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(renamed).write(to: deckFile)
+
+            if let markdown = Self.markdown(for: renamed).data(using: .utf8) {
+                try markdown.write(to: deck.url.appendingPathComponent("cards.md"))
+            }
+
+            library.updateFlashcardTitle(deckPath: deck.url.path, title: title)
+            refreshSavedDecks()
+            log("Renamed deck to “\(title)”.")
+        } catch {
+            log("Rename failed — \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteDeck(_ deck: SavedDeck) {
+        do {
+            try FileManager.default.trashItem(at: deck.url, resultingItemURL: nil)
+            library.closeFlashcards(deckPath: deck.url.path)
+            refreshSavedDecks()
+            log("Deleted deck “\(deck.title)”.")
+        } catch {
+            log("Delete failed — \(error.localizedDescription)")
+        }
+    }
+
+    /// Keeps deck names distinct by appending "1", "2", … on a collision.
+    private func uniqueDeckTitle(_ desired: String, excluding url: URL?) -> String {
+        let trimmed = desired.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? "Deck" : trimmed
+        let existing = Set(
+            savedDecks
+                .filter { $0.url != url }
+                .map { $0.title.lowercased() }
+        )
+
+        if !existing.contains(base.lowercased()) { return base }
+
+        var suffix = 1
+        while existing.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
     static func looksLikeFlashcards(_ prompt: String) -> Bool {
         let lower = prompt.lowercased()
         if lower.contains("flash card") || lower.contains("flash cards") || lower.contains("flip card") {
@@ -626,19 +734,27 @@ final class AgentChatModel: ObservableObject {
     }
 
     func chooseFlashcardFolder() {
+        guard let url = chooseFolder(message: "Choose where flashcard decks are saved", startingAt: flashcardFolder) else { return }
+        flashcardFolder = url.path
+        log("Flashcard folder set to \(url.path).")
+    }
+
+    func chooseSummaryFolder() {
+        guard let url = chooseFolder(message: "Choose where summaries are saved", startingAt: summaryFolder) else { return }
+        summaryFolder = url.path
+        log("Summary folder set to \(url.path).")
+    }
+
+    private func chooseFolder(message: String, startingAt path: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "Choose where flashcard decks are saved"
+        panel.message = message
         panel.prompt = "Choose"
-        panel.directoryURL = URL(fileURLWithPath: (flashcardFolder as NSString).expandingTildeInPath)
-
-        if panel.runModal() == .OK, let url = panel.url {
-            flashcardFolder = url.path
-            log("Flashcard folder set to \(url.path).")
-        }
+        panel.directoryURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     /// Asks opencode for flashcards, saves the deck to disk, and opens it in a tab.
@@ -662,7 +778,9 @@ final class AgentChatModel: ObservableObject {
                 return
             }
 
-            let title = Self.deckTitle(document: library.activeTab?.title, model: deck.title, prompt: prompt)
+            refreshSavedDecks()
+            let baseTitle = Self.deckTitle(document: library.activeTab?.title, model: deck.title, prompt: prompt)
+            let title = uniqueDeckTitle(baseTitle, excluding: nil)
             let savedURL = writeDeck(title: title, cards: deck.cards)
             let tab = FlashcardTab(title: title, cards: deck.cards, deckURL: savedURL)
             library.openFlashcard(tab)
@@ -808,9 +926,9 @@ final class AgentChatModel: ObservableObject {
 
     private static func flashcardGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create a set of flashcards. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        Create a set of flashcards covering the material as thoroughly as possible. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
         {"title": "Deck title", "cards": [{"front": "prompt or question", "back": "answer"}]}
-        Write 10 cards unless the request says otherwise. Keep each side short and focused.
+        Make as many cards as the material genuinely supports: cover every distinct fact worth testing, but don't pad to a round number and don't add trivial, vague or repetitive filler. If the request asks for a specific number, follow that instead. Keep each side short and focused.
         """
 
         if let context, !context.isEmpty {
@@ -818,6 +936,281 @@ final class AgentChatModel: ObservableObject {
         }
 
         return request + "\n\nRequest: \(prompt)"
+    }
+
+    // MARK: - Summaries
+
+    struct SavedSummary: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let url: URL
+        let modified: Date
+    }
+
+    static func looksLikeSummary(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        if lower.contains("tl;dr") || lower.contains("summary")
+            || lower.contains("summarize") || lower.contains("summarise") {
+            return true
+        }
+        return lower
+            .split(whereSeparator: { !$0.isLetter })
+            .contains { $0 == "overview" || $0 == "recap" }
+    }
+
+    /// Rescans the summary folder for saved Markdown summaries.
+    func refreshSavedSummaries() {
+        let root = URL(
+            fileURLWithPath: (summaryFolder as NSString).expandingTildeInPath,
+            isDirectory: true
+        )
+        let fileManager = FileManager.default
+
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            savedSummaries = []
+            return
+        }
+
+        var list: [SavedSummary] = []
+        for entry in entries where entry.pathExtension.lowercased() == "md" {
+            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let title = Self.summaryFile(at: entry)?.title ?? entry.deletingPathExtension().lastPathComponent
+            list.append(SavedSummary(id: entry.path, title: title, url: entry, modified: modified))
+        }
+
+        savedSummaries = list.sorted { $0.modified > $1.modified }
+    }
+
+    func openSavedSummary(_ summary: SavedSummary) {
+        guard let parsed = Self.summaryFile(at: summary.url) else {
+            log("Couldn’t read \(summary.url.path)")
+            return
+        }
+        library.openSummary(SummaryTab(title: parsed.title, text: parsed.text, fileURL: summary.url))
+        log("Opened summary “\(parsed.title)”.")
+    }
+
+    func promptRenameSummary(_ summary: SavedSummary) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Summary"
+        alert.informativeText = "Enter a new name for “\(summary.title)”."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = summary.title
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            renameSummary(summary, to: field.stringValue)
+        }
+    }
+
+    func confirmDeleteSummary(_ summary: SavedSummary) {
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(summary.title)”?"
+        alert.informativeText = "The summary file will be moved to the Trash."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            deleteSummary(summary)
+        }
+    }
+
+    private func performSummary(prompt: String, context: String?, client: OpenCodeClient) async {
+        log("Summary request detected — asking opencode…")
+
+        do {
+            let session = try await ensureSession(client: client)
+            let request = Self.summaryRequest(prompt: prompt, context: context)
+            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+            let text = Self.cleanSummary(reply)
+
+            guard !text.isEmpty else {
+                log("Empty summary — showing the reply as a normal answer.")
+                messages.append(
+                    ChatMessage(role: .assistant, text: reply.trimmingCharacters(in: .whitespacesAndNewlines), attachedContext: nil)
+                )
+                return
+            }
+
+            refreshSavedSummaries()
+            let baseTitle = Self.summaryTitle(document: library.activeTab?.title)
+            let title = uniqueSummaryTitle(baseTitle, excluding: nil)
+            let savedURL = writeSummary(title: title, text: text)
+
+            library.openSummary(SummaryTab(title: title, text: text, fileURL: savedURL))
+            refreshSavedSummaries()
+
+            if let savedURL {
+                log("Saved summary to \(savedURL.path).")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: "Created a summary and saved it to “\(savedURL.path)”. It’s open in a new tab.",
+                        attachedContext: nil
+                    )
+                )
+            } else {
+                log("Created a summary but couldn’t save it to \(summaryFolder).")
+                messages.append(
+                    ChatMessage(
+                        role: .assistant,
+                        text: "Created a summary in a new tab, but saving it to “\(summaryFolder)” failed. Check the folder in settings.",
+                        attachedContext: nil
+                    )
+                )
+            }
+        } catch {
+            log("Summary request failed — \(Self.describe(error))")
+            messages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
+        }
+    }
+
+    private func writeSummary(title: String, text: String) -> URL? {
+        let base = (summaryFolder as NSString).expandingTildeInPath
+        guard !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+
+        let root = URL(fileURLWithPath: base, isDirectory: true)
+        let fileManager = FileManager.default
+
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            let fileURL = Self.uniqueFileURL(in: root, slug: Self.slug(title))
+            try Self.summaryFileContents(title: title, text: text).write(to: fileURL, atomically: true, encoding: .utf8)
+            return fileURL
+        } catch {
+            log("Writing the summary failed — \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func renameSummary(_ summary: SavedSummary, to newName: String) {
+        refreshSavedSummaries()
+        let title = uniqueSummaryTitle(newName, excluding: summary.url)
+
+        guard let parsed = Self.summaryFile(at: summary.url) else {
+            log("Couldn’t read \(summary.url.path)")
+            return
+        }
+
+        let root = summary.url.deletingLastPathComponent()
+        let newURL = Self.uniqueFileURL(in: root, slug: Self.slug(title), excluding: summary.url)
+
+        do {
+            try Self.summaryFileContents(title: title, text: parsed.text).write(to: newURL, atomically: true, encoding: .utf8)
+            if newURL != summary.url {
+                try FileManager.default.removeItem(at: summary.url)
+            }
+            library.updateSummaryTitle(filePath: summary.url.path, title: title)
+            if let open = library.summaries.first(where: { $0.fileURL?.path == summary.url.path }) {
+                open.fileURL = newURL
+            }
+            refreshSavedSummaries()
+            log("Renamed summary to “\(title)”.")
+        } catch {
+            log("Rename failed — \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteSummary(_ summary: SavedSummary) {
+        do {
+            try FileManager.default.trashItem(at: summary.url, resultingItemURL: nil)
+            library.closeSummaries(filePath: summary.url.path)
+            refreshSavedSummaries()
+            log("Deleted summary “\(summary.title)”.")
+        } catch {
+            log("Delete failed — \(error.localizedDescription)")
+        }
+    }
+
+    private static func summaryTitle(document: String?) -> String {
+        if let document = document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
+            return "\(document) Summary"
+        }
+        return "Summary"
+    }
+
+    private func uniqueSummaryTitle(_ desired: String, excluding url: URL?) -> String {
+        let trimmed = desired.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? "Summary" : trimmed
+        let existing = Set(
+            savedSummaries
+                .filter { $0.url != url }
+                .map { $0.title.lowercased() }
+        )
+
+        if !existing.contains(base.lowercased()) { return base }
+
+        var suffix = 1
+        while existing.contains("\(base) \(suffix)".lowercased()) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
+    private static func summaryRequest(prompt: String, context: String?) -> String {
+        var request = """
+        Summarize the material below as clear, well-structured Markdown: a one-paragraph overview, then the key points as bullets, then any important conclusions or takeaways. Be concise but cover everything important. Respond with Markdown only — no JSON, and don't wrap the whole answer in a code fence.
+        """
+
+        if let context, !context.isEmpty {
+            request += "\n\n[Material]\n\(context)\n[End material]"
+        }
+
+        return request + "\n\nRequest: \(prompt)"
+    }
+
+    private static func cleanSummary(_ text: String) -> String {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("```") {
+            var lines = value.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            if !lines.isEmpty { lines.removeFirst() }
+            if lines.last?.trimmingCharacters(in: .whitespaces).hasPrefix("```") == true { lines.removeLast() }
+            value = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
+    }
+
+    private static func summaryFileContents(title: String, text: String) -> String {
+        "# \(title)\n\n\(text)\n"
+    }
+
+    /// Reads a summary file, splitting the leading `# Title` heading off the body.
+    private static func summaryFile(at url: URL) -> (title: String, text: String)? {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+
+        var lines = contents.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var title = url.deletingPathExtension().lastPathComponent
+
+        if let first = lines.first, first.hasPrefix("# ") {
+            title = String(first.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            lines.removeFirst()
+            if lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true {
+                lines.removeFirst()
+            }
+        }
+
+        let body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (title, body)
+    }
+
+    private static func uniqueFileURL(in root: URL, slug: String, excluding: URL? = nil) -> URL {
+        let fileManager = FileManager.default
+        var candidate = root.appendingPathComponent("\(slug).md")
+        var suffix = 1
+        while candidate != excluding, fileManager.fileExists(atPath: candidate.path) {
+            candidate = root.appendingPathComponent("\(slug) \(suffix).md")
+            suffix += 1
+        }
+        return candidate
     }
 
     // MARK: - Input history (up/down arrows)

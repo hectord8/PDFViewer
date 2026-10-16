@@ -31,6 +31,11 @@ struct DocumentTabBar: View {
                                 .id(deck.id)
                         }
 
+                        ForEach(store.summaries) { summary in
+                            summaryTabButton(for: summary)
+                                .id(summary.id)
+                        }
+
                         Button {
                             store.presentOpenPanel()
                         } label: {
@@ -50,8 +55,17 @@ struct DocumentTabBar: View {
                                     .disabled(true)
                             } else {
                                 ForEach(agent.savedDecks) { deck in
-                                    Button("\(deck.title) · \(deck.cardCount) cards") {
-                                        agent.openSavedDeck(deck)
+                                    Menu("\(deck.title) · \(deck.cardCount) cards") {
+                                        Button("Open") {
+                                            agent.openSavedDeck(deck)
+                                        }
+                                        Divider()
+                                        Button("Rename…") {
+                                            agent.promptRenameDeck(deck)
+                                        }
+                                        Button("Delete…") {
+                                            agent.confirmDeleteDeck(deck)
+                                        }
                                     }
                                 }
                             }
@@ -70,6 +84,42 @@ struct DocumentTabBar: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("Open a saved flashcard deck")
+
+                        Menu {
+                            if agent.savedSummaries.isEmpty {
+                                Button("No saved summaries") {}
+                                    .disabled(true)
+                            } else {
+                                ForEach(agent.savedSummaries) { summary in
+                                    Menu(summary.title) {
+                                        Button("Open") {
+                                            agent.openSavedSummary(summary)
+                                        }
+                                        Divider()
+                                        Button("Rename…") {
+                                            agent.promptRenameSummary(summary)
+                                        }
+                                        Button("Delete…") {
+                                            agent.confirmDeleteSummary(summary)
+                                        }
+                                    }
+                                }
+                            }
+                            Divider()
+                            Button("Refresh List") {
+                                agent.refreshSavedSummaries()
+                            }
+                        } label: {
+                            Image(systemName: "doc.plaintext")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Open a saved summary")
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -83,6 +133,10 @@ struct DocumentTabBar: View {
                     withAnimation { proxy.scrollTo(newValue, anchor: .center) }
                 }
                 .onChange(of: store.selectedFlashcardID) { _, newValue in
+                    guard let newValue else { return }
+                    withAnimation { proxy.scrollTo(newValue, anchor: .center) }
+                }
+                .onChange(of: store.selectedSummaryID) { _, newValue in
                     guard let newValue else { return }
                     withAnimation { proxy.scrollTo(newValue, anchor: .center) }
                 }
@@ -285,6 +339,62 @@ struct DocumentTabBar: View {
         .overlay(alignment: .trailing) {
             Button {
                 store.closeFlashcard(deck)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(isFocusedTab ? 1 : 0.55))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help("Close this tab")
+        }
+    }
+
+    private func summaryTabButton(for summary: SummaryTab) -> some View {
+        let isFocusedTab = store.selectedSummaryID == summary.id
+
+        return Button {
+            store.selectSummary(summary)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.plaintext")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isFocusedTab ? Color.accentColor : .secondary)
+
+                Text(summary.title)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .foregroundStyle(isFocusedTab ? Color.primary : .secondary)
+            }
+            .padding(.leading, 9)
+            .padding(.trailing, 26)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
+                    .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(summary.fileURL?.path ?? summary.title)
+        .contextMenu {
+            Button("Close Tab") {
+                store.closeSummary(summary)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                store.closeSummary(summary)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))

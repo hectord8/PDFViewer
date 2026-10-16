@@ -382,6 +382,16 @@ struct AgentChatPanel: View {
                 .controlSize(.small)
             }
 
+            HStack(spacing: 6) {
+                TextField("Summary folder", text: $model.summaryFolder)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout)
+                Button("Choose…") {
+                    model.chooseSummaryFolder()
+                }
+                .controlSize(.small)
+            }
+
             HStack {
                 Button("Connect") {
                     Task { await model.connect() }
@@ -603,8 +613,8 @@ private final class CommandLineTextView: NSTextView {
     }
 }
 
-/// Renders an assistant reply, honoring inline markdown and fenced code blocks.
-private struct MarkdownText: View {
+/// Renders markdown, honoring inline formatting and fenced code blocks.
+struct MarkdownText: View {
     let text: String
 
     var body: some View {

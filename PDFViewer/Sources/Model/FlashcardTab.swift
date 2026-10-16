@@ -19,7 +19,7 @@ enum FlashcardRating {
 /// "I know", so unknown and still-learning cards come back around.
 final class FlashcardTab: ObservableObject, Identifiable {
     let id = UUID()
-    let title: String
+    @Published var title: String
     let cards: [Flashcard]
     let deckURL: URL?
 
