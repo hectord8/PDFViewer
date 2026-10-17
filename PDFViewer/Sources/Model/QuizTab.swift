@@ -19,17 +19,19 @@ struct QuizResult {
 /// results returned by opencode.
 final class QuizTab: ObservableObject, Identifiable {
     let id = UUID()
-    let title: String
+    @Published var title: String
     let questions: [QuizQuestion]
+    @Published var fileURL: URL?
 
     @Published var answers: [String]
     @Published var results: [QuizResult] = []
     @Published var marked = false
     @Published var isMarking = false
 
-    init(title: String, questions: [QuizQuestion]) {
+    init(title: String, questions: [QuizQuestion], fileURL: URL? = nil) {
         self.title = title
         self.questions = questions
+        self.fileURL = fileURL
         self.answers = Array(repeating: "", count: questions.count)
     }
 

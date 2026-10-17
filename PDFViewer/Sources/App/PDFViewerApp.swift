@@ -121,6 +121,42 @@ struct PDFViewerApp: App {
                     agent.refreshSavedSummaries()
                 }
             }
+
+            Menu("Open Quiz") {
+                if agent.savedQuizzes.isEmpty {
+                    Button("No saved quizzes") {}
+                        .disabled(true)
+                } else {
+                    ForEach(agent.savedQuizzes) { quiz in
+                        Menu(quiz.title) {
+                            Button("Open") {
+                                agent.openSavedQuiz(quiz)
+                            }
+                            Divider()
+                            Menu("Add to Workbook") {
+                                ForEach(workbooks.workbooks) { workbook in
+                                    Button(workbook.name) {
+                                        workbooks.add(workbooks.makeItem(kind: .quiz, title: quiz.title, url: quiz.url), to: workbook.id)
+                                    }
+                                }
+                            }
+                            .disabled(workbooks.workbooks.isEmpty)
+                            Button("Rename…") {
+                                agent.promptRenameSavedQuiz(quiz)
+                            }
+                            Button("Delete…") {
+                                agent.confirmDeleteSavedQuiz(quiz)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Refresh List") {
+                    agent.refreshSavedQuizzes()
+                }
+            }
         }
 
         CommandMenu("View") {

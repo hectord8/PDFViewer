@@ -391,6 +391,16 @@ struct AgentChatPanel: View {
                 .controlSize(.small)
             }
 
+            HStack(spacing: 6) {
+                TextField("Quiz folder", text: $model.quizFolder)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout)
+                Button("Choose…") {
+                    model.chooseQuizFolder()
+                }
+                .controlSize(.small)
+            }
+
             HStack {
                 Button("Connect") {
                     Task { await model.connect() }

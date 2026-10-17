@@ -59,6 +59,7 @@ final class LibraryNode: NSObject {
             case .pdf: return "doc.text"
             case .summary: return "doc.plaintext"
             case .deck: return "rectangle.on.rectangle"
+            case .quiz: return "checklist"
             }
         }
     }
@@ -103,7 +104,7 @@ struct LibraryOutlineView: NSViewRepresentable {
         outlineView.setDraggingSourceOperationMask(.copy, forLocal: false)
 
         context.coordinator.outlineView = outlineView
-        context.coordinator.reload()
+        context.coordinator.reloadNow()
 
         let scrollView = NSScrollView()
         scrollView.documentView = outlineView
@@ -125,15 +126,50 @@ struct LibraryOutlineView: NSViewRepresentable {
         private var roots: [LibraryNode] = []
         private var expandedIDs: Set<UUID> = []
         private var menuNodes: [LibraryNode] = []
+        private var reloadScheduled = false
+        private var isDragging = false
+        private var reloadAfterDrag = false
+
+        private static let expansionKey = "libraryExpandedIDs"
 
         init(store: WorkbookStore) {
             self.store = store
+            expandedIDs = Set(
+                (UserDefaults.standard.array(forKey: Self.expansionKey) as? [String] ?? [])
+                    .compactMap { UUID(uuidString: $0) }
+            )
+        }
+
+        private func persistExpansion() {
+            UserDefaults.standard.set(expandedIDs.map(\.uuidString), forKey: Self.expansionKey)
         }
 
         // MARK: - Tree
 
+        /// Coalesces reloads and runs them after the current update, so we never
+        /// rebuild the outline view from inside its own delegate callbacks.
         func reload() {
+            guard !reloadScheduled else { return }
+            reloadScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.reloadScheduled = false
+                self?.performReload()
+            }
+        }
+
+        func reloadNow() {
+            reloadScheduled = false
+            performReload()
+        }
+
+        private func performReload() {
+            guard !isDragging else {
+                reloadAfterDrag = true
+                return
+            }
+
             captureExpansion()
+            persistExpansion()
 
             roots = store.workbooks.map { workbook in
                 let folderNodes = workbook.folders.map { folder in
@@ -256,19 +292,59 @@ struct LibraryOutlineView: NSViewRepresentable {
             return cell
         }
 
+        func outlineViewSelectionDidChange(_ notification: Notification) {
+            guard let outlineView, !outlineView.selectedRowIndexes.isEmpty else { return }
+            var workbookID: UUID?
+            for row in outlineView.selectedRowIndexes {
+                guard let node = outlineView.item(atRow: row) as? LibraryNode else { continue }
+                switch node.kind {
+                case .workbook(let workbook): workbookID = workbook.id
+                case .folder(_, let id): workbookID = id
+                case .item(_, let id): workbookID = id
+                }
+            }
+            if store.activeWorkbookID != workbookID {
+                store.activeWorkbookID = workbookID
+            }
+        }
+
         func outlineViewItemDidExpand(_ notification: Notification) {
             if let node = notification.userInfo?["NSObject"] as? LibraryNode {
                 expandedIDs.insert(node.id)
+                persistExpansion()
             }
         }
 
         func outlineViewItemDidCollapse(_ notification: Notification) {
             if let node = notification.userInfo?["NSObject"] as? LibraryNode {
                 expandedIDs.remove(node.id)
+                persistExpansion()
             }
         }
 
         // MARK: - Dragging
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            draggingSession session: NSDraggingSession,
+            willBeginAt screenPoint: NSPoint,
+            forItems draggedItems: [Any]
+        ) {
+            isDragging = true
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            draggingSession session: NSDraggingSession,
+            endedAt screenPoint: NSPoint,
+            operation: NSDragOperation
+        ) {
+            isDragging = false
+            if reloadAfterDrag {
+                reloadAfterDrag = false
+                reload()
+            }
+        }
 
         func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
             guard let node = item as? LibraryNode, case .item(let workbookItem, let workbookID) = node.kind else {
@@ -437,6 +513,10 @@ struct LibraryOutlineView: NSViewRepresentable {
                         AgentChatModel.SavedDeck(id: url.path, title: item.title, url: url, cardCount: 0, modified: .distantPast)
                     )
                 }
+            case .quiz:
+                Task { @MainActor in
+                    AgentChatModel.shared.openSavedQuiz(at: url)
+                }
             }
         }
 
@@ -449,6 +529,7 @@ struct LibraryOutlineView: NSViewRepresentable {
 
             menuNodes = outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? LibraryNode }
             guard let clicked = node(at: row) else { return nil }
+            menuClickedNode = clicked
 
             let menu = NSMenu()
             switch clicked.kind {
@@ -479,6 +560,7 @@ struct LibraryOutlineView: NSViewRepresentable {
 
         private var menuItemsContext: (workbook: Workbook?, folderID: UUID?)?
         private var menuWorkbookID: UUID?
+        private var menuClickedNode: LibraryNode?
 
         private func add(_ menu: NSMenu, _ title: String, _ action: Selector) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -487,7 +569,7 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         private var clickedWorkbookID: UUID? {
-            switch node(at: outlineView?.clickedRow ?? -1)?.kind {
+            switch menuClickedNode?.kind {
             case .workbook(let workbook): return workbook.id
             case .item(_, let workbookID): return workbookID
             default: return menuWorkbookID
@@ -495,22 +577,26 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         @objc private func menuOpen() {
-            if case .item(let item, _)? = node(at: outlineView?.clickedRow ?? -1)?.kind { open(item) }
+            if case .item(let item, _)? = menuClickedNode?.kind { open(item) }
         }
 
         @objc private func menuReveal() {
-            if case .item(let item, _)? = node(at: outlineView?.clickedRow ?? -1)?.kind, let url = store.url(for: item) {
+            if case .item(let item, _)? = menuClickedNode?.kind, let url = store.url(for: item) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
         }
 
         @objc private func menuRemove() {
-            guard let outlineView else { return }
-            let ids = selectionItemIDs()
-            let workbookID: UUID?
-            if case .item(_, let id)? = node(at: outlineView.clickedRow)?.kind { workbookID = id } else { workbookID = nil }
-            guard let workbookID else { return }
-            store.removeItems(ids.isEmpty ? [] : ids, from: workbookID)
+            guard case .item(let clickedItem, let workbookID)? = menuClickedNode?.kind else { return }
+
+            var ids = Set(menuNodes.compactMap { node -> UUID? in
+                if case .item(let item, _) = node.kind { return item.id }
+                return nil
+            })
+            if ids.isEmpty {
+                ids = [clickedItem.id]
+            }
+            store.removeItems(ids, from: workbookID)
         }
 
         @objc private func menuNewFolder() {

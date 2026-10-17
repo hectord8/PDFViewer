@@ -4,6 +4,7 @@ enum WorkbookItemKind: String, Codable {
     case pdf
     case summary
     case deck
+    case quiz
 }
 
 struct WorkbookItem: Codable, Identifiable {

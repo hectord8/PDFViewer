@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
+    @EnvironmentObject private var workbooks: WorkbookStore
 
     var body: some View {
         VStack(spacing: 0) {
@@ -10,6 +11,13 @@ struct ContentView: View {
                 .id("tabbar")
 
             Divider()
+
+            if let workbook = activeWorkbook {
+                WorkbookTabBar(workbook: workbook)
+                    .id("workbook-tabs")
+
+                Divider()
+            }
 
             HStack(spacing: 0) {
                 if store.showLibrary {
@@ -51,10 +59,12 @@ struct ContentView: View {
         .onAppear {
             agent.refreshSavedDecks()
             agent.refreshSavedSummaries()
+            agent.refreshSavedQuizzes()
         }
         .onChange(of: store.showAgentPanel) { _, _ in
             agent.refreshSavedDecks()
             agent.refreshSavedSummaries()
+            agent.refreshSavedQuizzes()
         }
         .alert(
             "Couldn’t Open File",
@@ -68,6 +78,11 @@ struct ContentView: View {
         } message: { message in
             Text(message)
         }
+    }
+
+    private var activeWorkbook: Workbook? {
+        guard let id = workbooks.activeWorkbookID else { return nil }
+        return workbooks.workbooks.first { $0.id == id }
     }
 
     @ViewBuilder
@@ -96,15 +111,17 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button {
+                store.toggleLibrary()
+            } label: {
+                Image(systemName: "books.vertical")
+            }
+            .help("Show or hide the library")
+        }
+
         if let tab = store.activeTab, !store.isGeneratedTabActive {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    store.toggleLibrary()
-                } label: {
-                    Image(systemName: "books.vertical")
-                }
-                .help("Show or hide the library")
-
                 Button {
                     store.toggleThumbnails()
                 } label: {

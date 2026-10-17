@@ -23,7 +23,9 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     @Published private(set) var matches: [PDFSelection] = []
     @Published private(set) var selectedMatchIndex: Int = 0
 
-    @Published var pageNotes: [Int: String] = [:]
+    @Published var pageNotes: [Int: String] = [:] {
+        didSet { AnnotationStore.save(pageNotes, pdfPath: url.path, title: title) }
+    }
     @Published var isAnnotatingPages = false
 
     /// Called whenever something worth persisting changed.
@@ -45,6 +47,7 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
         self.document = document
         self.pageCount = document.pageCount
         self.title = url.deletingPathExtension().lastPathComponent
+        self.pageNotes = AnnotationStore.load(pdfPath: url.path, title: self.title)
 
         let view = FitWidthPDFView(frame: .zero)
         view.document = document

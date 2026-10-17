@@ -13,7 +13,15 @@ final class LibraryStore: ObservableObject {
     static let shared = LibraryStore()
 
     @Published private(set) var tabs: [PDFDocumentTab] = []
-    @Published var selectedTabID: UUID?
+    @Published var selectedTabID: UUID? {
+        didSet {
+            guard selectedTabID != oldValue else { return }
+            // Bring saved notes back automatically when opening a PDF that has them.
+            if let tab = selectedTab, !tab.pageNotes.isEmpty {
+                showAnnotations = true
+            }
+        }
+    }
     @Published var showThumbnails = true
     @Published var showAgentPanel = false
     @Published var showAnnotations = false
@@ -266,6 +274,17 @@ final class LibraryStore: ObservableObject {
         if selectedQuizID == tab.id {
             selectedQuizID = nil
         }
+    }
+
+    func updateQuiz(filePath: String, title: String, newURL: URL) {
+        guard let quiz = quizzes.first(where: { $0.fileURL?.path == filePath }) else { return }
+        quiz.title = title
+        quiz.fileURL = newURL
+    }
+
+    func closeQuizzes(filePath: String) {
+        let matches = quizzes.filter { $0.fileURL?.path == filePath }
+        matches.forEach { closeQuiz($0) }
     }
 
     // MARK: - Flashcards

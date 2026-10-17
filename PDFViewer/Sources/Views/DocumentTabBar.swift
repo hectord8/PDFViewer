@@ -5,6 +5,20 @@ struct DocumentTabBar: View {
     @EnvironmentObject private var agent: AgentChatModel
     @EnvironmentObject private var workbooks: WorkbookStore
 
+    /// Paths of every file in the active workbook — these live in the workbook
+    /// tab strip, not the main tab row.
+    private var workbookPaths: Set<String> {
+        guard let id = workbooks.activeWorkbookID,
+              let workbook = workbooks.workbooks.first(where: { $0.id == id }) else {
+            return []
+        }
+        var paths = Set(workbook.items.map(\.path))
+        for folder in workbook.folders {
+            paths.formUnion(folder.items.map(\.path))
+        }
+        return paths
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(.bar).frame(height: 6)
@@ -12,7 +26,7 @@ struct DocumentTabBar: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(store.tabs) { tab in
+                        ForEach(store.tabs.filter { !workbookPaths.contains($0.url.path) }) { tab in
                             if store.isPinned(tab) {
                                 pinnedTabButton(for: tab)
                                     .id(tab.id)
@@ -22,17 +36,17 @@ struct DocumentTabBar: View {
                             }
                         }
 
-                        ForEach(store.quizzes) { quiz in
+                        ForEach(store.quizzes.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { quiz in
                             quizTabButton(for: quiz)
                                 .id(quiz.id)
                         }
 
-                        ForEach(store.flashcards) { deck in
+                        ForEach(store.flashcards.filter { !workbookPaths.contains($0.deckURL?.path ?? "") }) { deck in
                             flashcardTabButton(for: deck)
                                 .id(deck.id)
                         }
 
-                        ForEach(store.summaries) { summary in
+                        ForEach(store.summaries.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { summary in
                             summaryTabButton(for: summary)
                                 .id(summary.id)
                         }
@@ -127,6 +141,45 @@ struct DocumentTabBar: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("Open a saved summary")
+
+                        Menu {
+                            if agent.savedQuizzes.isEmpty {
+                                Button("No saved quizzes") {}
+                                    .disabled(true)
+                            } else {
+                                ForEach(agent.savedQuizzes) { quiz in
+                                    Menu(quiz.title) {
+                                        Button("Open") {
+                                            agent.openSavedQuiz(quiz)
+                                        }
+                                        Divider()
+                                        addToWorkbookMenu(
+                                            item: workbooks.makeItem(kind: .quiz, title: quiz.title, url: quiz.url)
+                                        )
+                                        Button("Rename…") {
+                                            agent.promptRenameSavedQuiz(quiz)
+                                        }
+                                        Button("Delete…") {
+                                            agent.confirmDeleteSavedQuiz(quiz)
+                                        }
+                                    }
+                                }
+                            }
+                            Divider()
+                            Button("Refresh List") {
+                                agent.refreshSavedQuizzes()
+                            }
+                        } label: {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Open a saved quiz")
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)

@@ -91,12 +91,22 @@ final class AgentChatModel: ObservableObject {
     }
     @Published private(set) var savedSummaries: [SavedSummary] = []
 
+    @Published var quizFolder: String {
+        didSet {
+            UserDefaults.standard.set(quizFolder, forKey: Self.quizFolderKey)
+            refreshSavedQuizzes()
+        }
+    }
+    @Published private(set) var savedQuizzes: [SavedQuiz] = []
+
     private static let addressKey = "openCodeServerAddress"
     private static let modelKey = "openCodeModelOverride"
     private static let flashcardFolderKey = "flashcardFolder"
     private static let summaryFolderKey = "summaryFolder"
+    private static let quizFolderKey = "quizFolder"
 
     private let library = LibraryStore.shared
+    private let workbooks = WorkbookStore.shared
 
     private var sessionID: String?
     private var client: OpenCodeClient?
@@ -120,6 +130,7 @@ final class AgentChatModel: ObservableObject {
         modelOverride = UserDefaults.standard.string(forKey: Self.modelKey) ?? Self.defaultModel
         flashcardFolder = UserDefaults.standard.string(forKey: Self.flashcardFolderKey) ?? Self.defaultFlashcardFolder
         summaryFolder = UserDefaults.standard.string(forKey: Self.summaryFolderKey) ?? Self.defaultSummaryFolder
+        quizFolder = UserDefaults.standard.string(forKey: Self.quizFolderKey) ?? Self.defaultQuizFolder
     }
 
     private static var defaultFlashcardFolder: String {
@@ -128,6 +139,10 @@ final class AgentChatModel: ObservableObject {
 
     private static var defaultSummaryFolder: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Summaries")
+    }
+
+    private static var defaultQuizFolder: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Quizzes")
     }
 
     var canSend: Bool {
@@ -399,8 +414,11 @@ final class AgentChatModel: ObservableObject {
             }
 
             let title = Self.quizTitle(document: library.activeTab?.title, model: quiz.title)
-            let tab = QuizTab(title: title, questions: quiz.questions)
+            let savedURL = writeQuiz(title: title, questions: quiz.questions)
+            let tab = QuizTab(title: title, questions: quiz.questions, fileURL: savedURL)
             library.openQuiz(tab)
+            addToActiveWorkbook(kind: .quiz, title: title, url: savedURL)
+            refreshSavedQuizzes()
 
             log("Created quiz “\(title)” with \(tab.questions.count) questions.")
             messages.append(
@@ -573,6 +591,165 @@ final class AgentChatModel: ObservableObject {
 
         \(lines.joined(separator: "\n\n"))
         """
+    }
+
+    private struct QuizFile: Codable {
+        struct Item: Codable {
+            let prompt: String
+            let answer: String
+            let marks: Int
+        }
+        let title: String
+        let questions: [Item]
+    }
+
+    private func writeQuiz(title: String, questions: [QuizQuestion]) -> URL? {
+        let base = (quizFolder as NSString).expandingTildeInPath
+        guard !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+
+        let root = URL(fileURLWithPath: base, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let fileURL = Self.uniqueFileURL(in: root, slug: Self.slug(title), ext: "json")
+            let file = QuizFile(
+                title: title,
+                questions: questions.map { .init(prompt: $0.prompt, answer: $0.answer, marks: $0.marks) }
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(file).write(to: fileURL)
+            return fileURL
+        } catch {
+            log("Writing the quiz failed — \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func openSavedQuiz(at url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let file = try? JSONDecoder().decode(QuizFile.self, from: data) else {
+            log("Couldn’t read \(url.path)")
+            return
+        }
+        let questions = file.questions.map { QuizQuestion(prompt: $0.prompt, answer: $0.answer, marks: $0.marks) }
+        library.openQuiz(QuizTab(title: file.title, questions: questions, fileURL: url))
+        log("Opened quiz “\(file.title)”.")
+    }
+
+    struct SavedQuiz: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let url: URL
+        let modified: Date
+    }
+
+    func refreshSavedQuizzes() {
+        let root = URL(fileURLWithPath: (quizFolder as NSString).expandingTildeInPath, isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            savedQuizzes = []
+            return
+        }
+
+        var list: [SavedQuiz] = []
+        for entry in entries where entry.pathExtension.lowercased() == "json" {
+            guard let data = try? Data(contentsOf: entry),
+                  let file = try? JSONDecoder().decode(QuizFile.self, from: data) else { continue }
+            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            list.append(SavedQuiz(id: entry.path, title: file.title, url: entry, modified: modified))
+        }
+        savedQuizzes = list.sorted { $0.modified > $1.modified }
+    }
+
+    func openSavedQuiz(_ quiz: SavedQuiz) {
+        openSavedQuiz(at: quiz.url)
+    }
+
+    func promptRenameSavedQuiz(_ quiz: SavedQuiz) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Quiz"
+        alert.informativeText = "Enter a new name for “\(quiz.title)”."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = quiz.title
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            renameSavedQuiz(quiz, to: field.stringValue)
+        }
+    }
+
+    func confirmDeleteSavedQuiz(_ quiz: SavedQuiz) {
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(quiz.title)”?"
+        alert.informativeText = "The quiz file will be moved to the Trash."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            deleteSavedQuiz(quiz)
+        }
+    }
+
+    private func renameSavedQuiz(_ quiz: SavedQuiz, to newName: String) {
+        refreshSavedQuizzes()
+        let title = uniqueQuizTitle(newName, excluding: quiz.url)
+
+        guard let data = try? Data(contentsOf: quiz.url),
+              let file = try? JSONDecoder().decode(QuizFile.self, from: data) else {
+            log("Couldn’t read \(quiz.url.path)")
+            return
+        }
+
+        let renamed = QuizFile(title: title, questions: file.questions)
+        let newURL = Self.uniqueFileURL(
+            in: quiz.url.deletingLastPathComponent(),
+            slug: Self.slug(title),
+            ext: "json",
+            excluding: quiz.url
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(renamed).write(to: newURL)
+            if newURL != quiz.url {
+                try FileManager.default.removeItem(at: quiz.url)
+            }
+            library.updateQuiz(filePath: quiz.url.path, title: title, newURL: newURL)
+            refreshSavedQuizzes()
+            log("Renamed quiz to “\(title)”.")
+        } catch {
+            log("Rename failed — \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteSavedQuiz(_ quiz: SavedQuiz) {
+        do {
+            try FileManager.default.trashItem(at: quiz.url, resultingItemURL: nil)
+            library.closeQuizzes(filePath: quiz.url.path)
+            refreshSavedQuizzes()
+            log("Deleted quiz “\(quiz.title)”.")
+        } catch {
+            log("Delete failed — \(error.localizedDescription)")
+        }
+    }
+
+    private func uniqueQuizTitle(_ desired: String, excluding url: URL?) -> String {
+        let trimmed = desired.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = trimmed.isEmpty ? "Quiz" : trimmed
+        let existing = Set(savedQuizzes.filter { $0.url != url }.map { $0.title.lowercased() })
+        if !existing.contains(base.lowercased()) { return base }
+        var suffix = 1
+        while existing.contains("\(base) \(suffix)".lowercased()) { suffix += 1 }
+        return "\(base) \(suffix)"
     }
 
     // MARK: - Flashcards
@@ -750,6 +927,12 @@ final class AgentChatModel: ObservableObject {
         log("Summary folder set to \(url.path).")
     }
 
+    func chooseQuizFolder() {
+        guard let url = chooseFolder(message: "Choose where quizzes are saved", startingAt: quizFolder) else { return }
+        quizFolder = url.path
+        log("Quiz folder set to \(url.path).")
+    }
+
     private func chooseFolder(message: String, startingAt path: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -789,6 +972,7 @@ final class AgentChatModel: ObservableObject {
             let savedURL = writeDeck(title: title, cards: deck.cards)
             let tab = FlashcardTab(title: title, cards: deck.cards, deckURL: savedURL)
             library.openFlashcard(tab)
+            addToActiveWorkbook(kind: .deck, title: title, url: savedURL)
             refreshSavedDecks()
 
             if let savedURL {
@@ -1183,6 +1367,7 @@ final class AgentChatModel: ObservableObject {
             let savedURL = writeSummary(title: title, text: text)
 
             library.openSummary(SummaryTab(title: title, text: text, fileURL: savedURL))
+            addToActiveWorkbook(kind: .summary, title: title, url: savedURL)
             refreshSavedSummaries()
 
             if let savedURL {
@@ -1338,15 +1523,39 @@ final class AgentChatModel: ObservableObject {
         return (title, body)
     }
 
-    private static func uniqueFileURL(in root: URL, slug: String, excluding: URL? = nil) -> URL {
+    private static func uniqueFileURL(in root: URL, slug: String, ext: String = "md", excluding: URL? = nil) -> URL {
         let fileManager = FileManager.default
-        var candidate = root.appendingPathComponent("\(slug).md")
+        var candidate = root.appendingPathComponent("\(slug).\(ext)")
         var suffix = 1
         while candidate != excluding, fileManager.fileExists(atPath: candidate.path) {
-            candidate = root.appendingPathComponent("\(slug) \(suffix).md")
+            candidate = root.appendingPathComponent("\(slug) \(suffix).\(ext)")
             suffix += 1
         }
         return candidate
+    }
+
+    // MARK: - Workbook integration
+
+    private func addToActiveWorkbook(kind: WorkbookItemKind, title: String, url: URL?) {
+        guard let url, let workbookID = workbooks.activeWorkbookID,
+              let workbook = workbooks.workbooks.first(where: { $0.id == workbookID }) else { return }
+
+        let folderName: String
+        switch kind {
+        case .pdf: folderName = "PDFs"
+        case .summary: folderName = "Summaries"
+        case .deck: folderName = "Flashcards"
+        case .quiz: folderName = "Quizzes"
+        }
+
+        let folderID: UUID?
+        if let existing = workbook.folders.first(where: { $0.name.caseInsensitiveCompare(folderName) == .orderedSame }) {
+            folderID = existing.id
+        } else {
+            folderID = workbooks.addFolder(named: folderName, to: workbookID)
+        }
+
+        workbooks.add(workbooks.makeItem(kind: kind, title: title, url: url), to: workbookID, folderID: folderID)
     }
 
     // MARK: - Input history (up/down arrows)

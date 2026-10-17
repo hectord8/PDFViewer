@@ -8,10 +8,32 @@ final class WorkbookStore: ObservableObject {
 
     @Published private(set) var workbooks: [Workbook] = []
 
+    /// The workbook whose files are shown in the workbook tab strip.
+    @Published var activeWorkbookID: UUID? {
+        didSet {
+            if let id = activeWorkbookID {
+                UserDefaults.standard.set(id.uuidString, forKey: Self.activeKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.activeKey)
+            }
+        }
+    }
+
+    private static let activeKey = "activeWorkbookID"
     private var saveWorkItem: DispatchWorkItem?
 
     private init() {
         load()
+        restoreActiveWorkbook()
+    }
+
+    private func restoreActiveWorkbook() {
+        guard let stored = UserDefaults.standard.string(forKey: Self.activeKey),
+              let id = UUID(uuidString: stored),
+              workbooks.contains(where: { $0.id == id }) else {
+            return
+        }
+        activeWorkbookID = id
     }
 
     // MARK: - Persistence
@@ -71,6 +93,9 @@ final class WorkbookStore: ObservableObject {
 
     func delete(_ workbook: Workbook) {
         workbooks.removeAll { $0.id == workbook.id }
+        if activeWorkbookID == workbook.id {
+            activeWorkbookID = nil
+        }
         scheduleSave()
     }
 
