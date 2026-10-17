@@ -189,6 +189,11 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("l", modifiers: [.command, .option])
 
+            Button(store.showWorkbookChat ? "Hide Workbook Assistant" : "Show Workbook Assistant") {
+                store.toggleWorkbookChat()
+            }
+            .keyboardShortcut("k", modifiers: [.command, .option])
+
             Divider()
 
             Button("Zoom In") {

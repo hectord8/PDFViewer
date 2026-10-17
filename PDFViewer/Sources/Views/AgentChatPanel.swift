@@ -440,14 +440,21 @@ struct AgentChatPanel: View {
     }
 
     private func contextForScope() -> String? {
-        guard let tab = store.activeTab else { return nil }
-        return AgentChatModel.context(for: tab, scope: model.contextScope)
+        switch model.contextScope {
+        case .none:
+            return nil
+        case .workbook:
+            return AgentChatModel.workbookContext(focusPath: store.activeTab?.url.path)
+        case .currentPage, .wholeDocument:
+            guard let tab = store.activeTab else { return nil }
+            return AgentChatModel.context(for: tab, scope: model.contextScope)
+        }
     }
 }
 
 /// A command-line style text field: Return submits, Shift+Return inserts a
 /// newline, and the up/down arrows recall previous inputs.
-private struct CommandLineField: NSViewRepresentable {
+struct CommandLineField: NSViewRepresentable {
     @Binding var text: String
     var onSubmit: () -> Void
     var onPrevious: () -> Void
@@ -517,7 +524,7 @@ private struct CommandLineField: NSViewRepresentable {
     }
 }
 
-private final class CommandLineTextView: NSTextView {
+final class CommandLineTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?

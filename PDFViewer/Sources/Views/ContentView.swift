@@ -87,7 +87,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let summary = store.selectedSummaryTab {
+        if store.showWorkbookChat {
+            WorkbookChatView()
+                .id("workbook-chat")
+        } else if let summary = store.selectedSummaryTab {
             SummaryView(tab: summary)
                 .id(summary.id)
         } else if let deck = store.selectedFlashcardTab {
@@ -118,6 +121,13 @@ struct ContentView: View {
                 Image(systemName: "books.vertical")
             }
             .help("Show or hide the library")
+
+            Button {
+                store.toggleWorkbookChat()
+            } label: {
+                Image(systemName: "bubble.left.and.bubble.right")
+            }
+            .help("Workbook Assistant")
         }
 
         if let tab = store.activeTab, !store.isGeneratedTabActive {

@@ -26,6 +26,7 @@ final class LibraryStore: ObservableObject {
     @Published var showAgentPanel = false
     @Published var showAnnotations = false
     @Published var showLibrary = false
+    @Published var showWorkbookChat = false
     @Published var errorMessage: String?
 
     @Published var secondaryTabID: UUID?
@@ -615,6 +616,10 @@ final class LibraryStore: ObservableObject {
 
     func toggleLibrary() {
         showLibrary.toggle()
+    }
+
+    func toggleWorkbookChat() {
+        showWorkbookChat.toggle()
     }
 
     func zoomIn() {

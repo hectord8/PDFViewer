@@ -38,6 +38,7 @@
 		AA00000000000000000000BF /* LibraryOutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000AF /* LibraryOutlineView.swift */; };
 		AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CA /* WorkbookTabBar.swift */; };
 		AA00000000000000000000CD /* AnnotationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CC /* AnnotationStore.swift */; };
+		AA00000000000000000000CF /* WorkbookChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CE /* WorkbookChatView.swift */; };
 		D4BACBF2F94D95C59BA98E50 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -74,6 +75,7 @@
 		AA00000000000000000000AF /* LibraryOutlineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryOutlineView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CA /* WorkbookTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookTabBar.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CC /* AnnotationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationStore.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000CE /* WorkbookChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookChatView.swift"; sourceTree = "<group>"; };
 		6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -171,6 +173,7 @@
 				AF1D11E172DA03A366C2E27A /* ThumbnailSidebar.swift */,
 				0F38F7D9009CB391A159D308 /* WelcomeView.swift */,
 				AA00000000000000000000CA /* WorkbookTabBar.swift */,
+				AA00000000000000000000CE /* WorkbookChatView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -291,6 +294,7 @@
 				B54C5B84F2CA52709E5C23B4 /* ThumbnailSidebar.swift in Sources */,
 				510138CC4BC0D429CF1D39E2 /* WelcomeView.swift in Sources */,
 				AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */,
+				AA00000000000000000000CF /* WorkbookChatView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

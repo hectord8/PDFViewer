@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import PDFKit
 
 /// Drives the "Ask opencode" side panel: talks to `opencode serve`, keeps the
 /// chat transcript, and attaches the visible PDF page as context.
@@ -28,6 +29,7 @@ final class AgentChatModel: ObservableObject {
 
     enum ContextScope: String, CaseIterable, Identifiable {
         case wholeDocument
+        case workbook
         case currentPage
         case none
 
@@ -36,6 +38,7 @@ final class AgentChatModel: ObservableObject {
         var label: String {
             switch self {
             case .wholeDocument: return "Whole document"
+            case .workbook: return "Whole workbook"
             case .currentPage: return "Current page"
             case .none: return "No context"
             }
@@ -65,7 +68,9 @@ final class AgentChatModel: ObservableObject {
 
     @Published var messages: [ChatMessage] = []
     @Published var input: String = ""
-    @Published var contextScope: ContextScope = .wholeDocument
+    @Published var contextScope: ContextScope = .wholeDocument {
+        didSet { UserDefaults.standard.set(contextScope.rawValue, forKey: Self.scopeKey) }
+    }
     @Published var status: Status = .disconnected
     @Published var isSending = false
     @Published var logs: [LogEntry] = []
@@ -104,6 +109,7 @@ final class AgentChatModel: ObservableObject {
     private static let flashcardFolderKey = "flashcardFolder"
     private static let summaryFolderKey = "summaryFolder"
     private static let quizFolderKey = "quizFolder"
+    private static let scopeKey = "contextScope"
 
     private let library = LibraryStore.shared
     private let workbooks = WorkbookStore.shared
@@ -116,6 +122,7 @@ final class AgentChatModel: ObservableObject {
     private var history: [String] = []
     private var historyCursor = 0
     private var historyDraft = ""
+    private var sentContextHash: Int?
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -131,6 +138,10 @@ final class AgentChatModel: ObservableObject {
         flashcardFolder = UserDefaults.standard.string(forKey: Self.flashcardFolderKey) ?? Self.defaultFlashcardFolder
         summaryFolder = UserDefaults.standard.string(forKey: Self.summaryFolderKey) ?? Self.defaultSummaryFolder
         quizFolder = UserDefaults.standard.string(forKey: Self.quizFolderKey) ?? Self.defaultQuizFolder
+        if let raw = UserDefaults.standard.string(forKey: Self.scopeKey),
+           let scope = ContextScope(rawValue: raw) {
+            contextScope = scope
+        }
     }
 
     private static var defaultFlashcardFolder: String {
@@ -361,7 +372,22 @@ final class AgentChatModel: ObservableObject {
 
         do {
             let session = try await ensureSession(client: client)
-            let payload = Self.compose(question: prompt, context: attached)
+
+            // The session already remembers the conversation, so only attach the
+            // (potentially large) context when it's new — cheaper and faster.
+            let payload: String
+            if let attached, !attached.isEmpty {
+                let hash = attached.hashValue
+                if sentContextHash == hash {
+                    payload = prompt
+                } else {
+                    sentContextHash = hash
+                    payload = Self.compose(question: prompt, context: attached)
+                }
+            } else {
+                payload = prompt
+            }
+
             let reply = try await client.sendMessage(sessionID: session, text: payload, model: parsedModel)
             log("Reply received (\(reply.count) chars).")
             messages.append(
@@ -379,7 +405,92 @@ final class AgentChatModel: ObservableObject {
 
     func newChat() {
         sessionID = nil
+        sentContextHash = nil
         messages.removeAll()
+    }
+
+    // MARK: - Workbook assistant (main chat)
+
+    @Published var workbookMessages: [ChatMessage] = []
+    @Published var workbookInput: String = ""
+    @Published var isSendingWorkbook = false
+
+    private var workbookSessionID: String?
+    private var workbookContextHash: Int?
+
+    var canSendWorkbook: Bool {
+        status.isConnected
+            && !workbookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isSendingWorkbook
+    }
+
+    func sendWorkbookMessage() async {
+        let prompt = workbookInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isSendingWorkbook else { return }
+        guard let client else {
+            status = .failed("Not connected to opencode.")
+            return
+        }
+
+        workbookInput = ""
+        isSendingWorkbook = true
+        defer { isSendingWorkbook = false }
+        workbookMessages.append(ChatMessage(role: .user, text: prompt, attachedContext: nil))
+
+        do {
+            let session = try await ensureWorkbookSession(client: client)
+            let context = Self.workbookContext()
+
+            let payload: String
+            if let context, !context.isEmpty {
+                let hash = context.hashValue
+                if workbookContextHash == hash {
+                    payload = prompt
+                } else {
+                    workbookContextHash = hash
+                    payload = Self.workbookAssistantPrompt(question: prompt, context: context)
+                }
+            } else {
+                payload = prompt
+            }
+
+            let reply = try await client.sendMessage(sessionID: session, text: payload, model: parsedModel)
+            workbookMessages.append(
+                ChatMessage(
+                    role: .assistant,
+                    text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                    attachedContext: nil
+                )
+            )
+        } catch {
+            log("Workbook request failed — \(Self.describe(error))")
+            workbookMessages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
+        }
+    }
+
+    func newWorkbookChat() {
+        workbookSessionID = nil
+        workbookContextHash = nil
+        workbookMessages.removeAll()
+    }
+
+    private func ensureWorkbookSession(client: OpenCodeClient) async throws -> String {
+        if let workbookSessionID { return workbookSessionID }
+        let created = try await client.createSession()
+        workbookSessionID = created
+        return created
+    }
+
+    private static func workbookAssistantPrompt(question: String, context: String) -> String {
+        """
+        You are a study assistant for a whole workbook of course material. Answer the question using the material below. Wherever you use a fact, name the document (and page or heading) it came from and quote the relevant snippet. Finish with a short "Sources" section listing the documents and pages you drew on. If the material doesn't contain the answer, say so.
+
+        [Workbook material]
+        \(context)
+        [End workbook material]
+
+        Question: \(question)
+        """
     }
 
     // MARK: - Quizzes
@@ -1658,7 +1769,96 @@ final class AgentChatModel: ObservableObject {
             return currentPageContext(tab)
         case .wholeDocument:
             return wholeDocumentContext(tab)
+        case .workbook:
+            return workbookContext()
         }
+    }
+
+    private static var workbookCache: [UUID: (signature: String, text: String)] = [:]
+
+    /// Context assembled from the active workbook. When `focusPath` is set (the
+    /// open PDF) its text comes first, so the model focuses on it while still
+    /// having the whole workbook available. Distilled Markdown summaries are
+    /// included next (cheap), then the remaining PDFs, up to a total budget.
+    /// Cached until the workbook's contents change.
+    static func workbookContext(focusPath: String? = nil) -> String? {
+        let store = WorkbookStore.shared
+        guard let id = store.activeWorkbookID,
+              let workbook = store.workbooks.first(where: { $0.id == id }) else {
+            return nil
+        }
+
+        var items: [WorkbookItem] = []
+        for folder in workbook.folders {
+            items.append(contentsOf: folder.items)
+        }
+        items.append(contentsOf: workbook.items)
+        guard !items.isEmpty else { return nil }
+
+        let signature = (focusPath ?? "")
+            + "|" + items.map { "\($0.kind.rawValue):\($0.path)" }.joined(separator: "|")
+        if let cached = workbookCache[id], cached.signature == signature {
+            return cached.text
+        }
+
+        var ordered: [WorkbookItem] = []
+        if let focusPath, let focus = items.first(where: { $0.path == focusPath }) {
+            ordered.append(focus)
+        }
+        ordered.append(contentsOf: items.filter { $0.path != focusPath && $0.kind == .summary })
+        ordered.append(contentsOf: items.filter { $0.path != focusPath && $0.kind == .pdf })
+
+        let budget = 60_000
+        var pieces: [String] = []
+        var used = 0
+
+        func append(_ header: String, _ body: String) -> Bool {
+            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return true }
+            let piece = "## \(header)\n\(trimmed)"
+            if used + piece.count > budget {
+                let remaining = budget - used
+                if remaining > 200 {
+                    pieces.append(String(piece.prefix(remaining)))
+                    used = budget
+                }
+                return false
+            }
+            pieces.append(piece)
+            used += piece.count
+            return true
+        }
+
+        outer: for item in ordered {
+            if used >= budget { break outer }
+
+            switch item.kind {
+            case .summary:
+                guard let url = store.url(for: item),
+                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                if !append(item.title, text) { break outer }
+
+            case .pdf:
+                guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
+                var text = ""
+                for index in 0..<document.pageCount {
+                    guard let page = document.page(at: index), let pageText = page.string, !pageText.isEmpty else { continue }
+                    text += "\n--- Page \(index + 1) ---\n\(pageText)"
+                    if used + text.count > budget { break }
+                }
+                let header = item.path == focusPath ? "\(item.title) (open document)" : item.title
+                if !append(header, text) { break outer }
+
+            case .deck, .quiz:
+                continue
+            }
+        }
+
+        guard !pieces.isEmpty else { return nil }
+        let header = "Workbook: \(workbook.name) — \(items.count) item\(items.count == 1 ? "" : "s")\n\n"
+        let text = header + pieces.joined(separator: "\n\n")
+        workbookCache[id] = (signature, text)
+        return text
     }
 
     private static func currentPageContext(_ tab: PDFDocumentTab) -> String? {
