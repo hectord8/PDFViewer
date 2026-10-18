@@ -131,45 +131,60 @@ struct WorkbookChatView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                CommandLineField(
-                    text: $agent.workbookInput,
-                    onSubmit: { send() },
-                    onPrevious: {},
-                    onNext: {},
-                    onEdited: {}
-                )
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
 
-                if agent.workbookInput.isEmpty {
-                    Text("Ask about the whole workbook…")
-                        .font(.body)
-                        .foregroundStyle(.tertiary)
-                        .padding(.leading, 8)
-                        .padding(.top, 6)
-                        .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topLeading) {
+                    CommandLineField(
+                        text: $agent.workbookInput,
+                        onSubmit: { send() },
+                        onPrevious: {},
+                        onNext: {},
+                        onEdited: {}
+                    )
+
+                    if agent.workbookInput.isEmpty {
+                        Text("How can I help with your workbook?")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 5)
+                            .padding(.top, 3)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                HStack {
+                    Spacer()
+
+                    Button {
+                        send()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 24))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(activeWorkbook == nil || !agent.canSendWorkbook)
+                    .help("Send")
                 }
             }
+            .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+            .frame(maxWidth: 760)
 
-            Button {
-                send()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-            }
-            .buttonStyle(.plain)
-            .disabled(activeWorkbook == nil || !agent.canSendWorkbook)
-            .help("Send")
+            Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 22)
     }
 
     private func send() {

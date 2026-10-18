@@ -1,13 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// Drag payload carried while dragging items inside the sidebar.
+/// Drag payload carried while dragging items or folders inside the sidebar.
 struct WorkbookDragItems: Codable {
+    enum Kind: String, Codable {
+        case items
+        case folders
+    }
+
     let sourceWorkbook: UUID
+    let kind: Kind
     let ids: [UUID]
 
-    init(sourceWorkbook: UUID, ids: [UUID]) {
+    init(sourceWorkbook: UUID, kind: Kind, ids: [UUID]) {
         self.sourceWorkbook = sourceWorkbook
+        self.kind = kind
         self.ids = ids
     }
 
@@ -60,6 +67,7 @@ final class LibraryNode: NSObject {
             case .summary: return "doc.plaintext"
             case .deck: return "rectangle.on.rectangle"
             case .quiz: return "checklist"
+            case .file: return "doc"
             }
         }
     }
@@ -172,15 +180,11 @@ struct LibraryOutlineView: NSViewRepresentable {
             persistExpansion()
 
             roots = store.workbooks.map { workbook in
-                let folderNodes = workbook.folders.map { folder in
-                    LibraryNode(
-                        id: folder.id,
-                        kind: .folder(folder, workbookID: workbook.id),
-                        children: folder.items.map { LibraryNode(id: $0.id, kind: .item($0, workbookID: workbook.id)) }
-                    )
-                }
-                let itemNodes = workbook.items.map { LibraryNode(id: $0.id, kind: .item($0, workbookID: workbook.id)) }
-                return LibraryNode(id: workbook.id, kind: .workbook(workbook), children: folderNodes + itemNodes)
+                LibraryNode(
+                    id: workbook.id,
+                    kind: .workbook(workbook),
+                    children: makeNodes(folders: workbook.folders, items: workbook.items, workbookID: workbook.id)
+                )
             }
 
             guard let outlineView else { return }
@@ -192,6 +196,20 @@ struct LibraryOutlineView: NSViewRepresentable {
 
         /// Records which nodes are currently expanded straight from the outline
         /// view (before the tree is rebuilt), so reloading preserves them.
+        private func makeNodes(folders: [WorkbookFolder], items: [WorkbookItem], workbookID: UUID) -> [LibraryNode] {
+            var nodes = folders.map { makeFolderNode($0, workbookID: workbookID) }
+            nodes.append(contentsOf: items.map { LibraryNode(id: $0.id, kind: .item($0, workbookID: workbookID)) })
+            return nodes
+        }
+
+        private func makeFolderNode(_ folder: WorkbookFolder, workbookID: UUID) -> LibraryNode {
+            LibraryNode(
+                id: folder.id,
+                kind: .folder(folder, workbookID: workbookID),
+                children: makeNodes(folders: folder.folders, items: folder.items, workbookID: workbookID)
+            )
+        }
+
         private func captureExpansion() {
             guard let outlineView else { return }
             func walk(_ node: LibraryNode) {
@@ -347,18 +365,24 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-            guard let node = item as? LibraryNode, case .item(let workbookItem, let workbookID) = node.kind else {
+            guard let node = item as? LibraryNode else { return nil }
+
+            let payload: WorkbookDragItems
+            switch node.kind {
+            case .item(let workbookItem, let workbookID):
+                let selected = selectionItemIDs()
+                let ids = selected.contains(workbookItem.id) ? Array(selected) : [workbookItem.id]
+                payload = WorkbookDragItems(sourceWorkbook: workbookID, kind: .items, ids: ids)
+            case .folder(let folder, let workbookID):
+                let selected = selectionFolderIDs()
+                let ids = selected.contains(folder.id) ? Array(selected) : [folder.id]
+                payload = WorkbookDragItems(sourceWorkbook: workbookID, kind: .folders, ids: ids)
+            case .workbook:
                 return nil
             }
 
-            let selectedItemIDs = selectionItemIDs()
-            let ids = selectedItemIDs.contains(workbookItem.id) ? Array(selectedItemIDs) : [workbookItem.id]
-
             let pasteboardItem = NSPasteboardItem()
-            pasteboardItem.setString(
-                WorkbookDragItems(sourceWorkbook: workbookID, ids: ids).jsonString,
-                forType: Self.dragType
-            )
+            pasteboardItem.setString(payload.jsonString, forType: Self.dragType)
             return pasteboardItem
         }
 
@@ -371,6 +395,13 @@ struct LibraryOutlineView: NSViewRepresentable {
             let hasItems = info.draggingPasteboard.availableType(from: [Self.dragType]) != nil
             let hasFiles = info.draggingPasteboard.availableType(from: [.fileURL]) != nil
             guard hasItems || hasFiles else { return [] }
+
+            if hasItems,
+               let json = info.draggingPasteboard.string(forType: Self.dragType),
+               let payload = WorkbookDragItems(jsonString: json),
+               payload.kind == .folders {
+                return validateFolderDrop(outlineView, item: item, index: index)
+            }
 
             if hasItems {
                 if index == NSOutlineViewDropOnItemIndex, let node = item as? LibraryNode {
@@ -400,6 +431,26 @@ struct LibraryOutlineView: NSViewRepresentable {
             return []
         }
 
+        private func validateFolderDrop(_ outlineView: NSOutlineView, item: Any?, index: Int) -> NSDragOperation {
+            guard let node = item as? LibraryNode else { return [] }
+            switch node.kind {
+            case .workbook, .folder:
+                if index == NSOutlineViewDropOnItemIndex {
+                    // Drop on the row: nest into the workbook/folder.
+                    outlineView.setDropItem(node, dropChildIndex: NSOutlineViewDropOnItemIndex)
+                } else {
+                    // Drop between its children: insert at that position.
+                    outlineView.setDropItem(node, dropChildIndex: min(index, node.children.count))
+                }
+                return .move
+            case .item:
+                // Drop on an item: place at the end of its parent container.
+                let parent = outlineView.parent(forItem: node)
+                outlineView.setDropItem(parent, dropChildIndex: NSOutlineViewDropOnItemIndex)
+                return .move
+            }
+        }
+
         private func insertionPoint(_ outlineView: NSOutlineView, over node: LibraryNode, info: NSDraggingInfo) -> (Any?, Int) {
             let row = outlineView.row(forItem: node)
             guard row >= 0 else { return (outlineView.parent(forItem: node), 0) }
@@ -419,6 +470,21 @@ struct LibraryOutlineView: NSViewRepresentable {
         ) -> Bool {
             if let json = info.draggingPasteboard.string(forType: Self.dragType),
                let payload = WorkbookDragItems(jsonString: json) {
+                if payload.kind == .folders {
+                    guard let node = item as? LibraryNode else { return false }
+                    switch node.kind {
+                    case .workbook(let workbook):
+                        let idx = index == NSOutlineViewDropOnItemIndex ? nil : min(index, workbook.folders.count)
+                        store.moveFolders(Set(payload.ids), from: payload.sourceWorkbook, to: workbook.id, folderID: nil, index: idx)
+                    case .folder(let folder, let workbookID):
+                        let idx = index == NSOutlineViewDropOnItemIndex ? nil : min(index, folder.folders.count)
+                        store.moveFolders(Set(payload.ids), from: payload.sourceWorkbook, to: workbookID, folderID: folder.id, index: idx)
+                    case .item(_, let workbookID):
+                        store.moveFolders(Set(payload.ids), from: payload.sourceWorkbook, to: workbookID, folderID: nil, index: nil)
+                    }
+                    return true
+                }
+
                 guard let target = target(for: item, index: index) else { return false }
                 store.moveItems(
                     from: payload.sourceWorkbook,
@@ -437,13 +503,16 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         private func target(for item: Any?, index: Int) -> (workbookID: UUID, folderID: UUID?, index: Int?)? {
-            let insertion = index == NSOutlineViewDropOnItemIndex ? nil : index
+            let raw = index == NSOutlineViewDropOnItemIndex ? nil : index
             guard let node = item as? LibraryNode else { return nil }
             switch node.kind {
             case .workbook(let workbook):
-                return (workbook.id, nil, insertion)
+                // Children are folders first, then items — map to the items index.
+                let itemIndex = raw.map { max(0, min($0 - workbook.folders.count, workbook.items.count)) }
+                return (workbook.id, nil, itemIndex)
             case .folder(let folder, let workbookID):
-                return (workbookID, folder.id, insertion)
+                let itemIndex = raw.map { max(0, min($0 - folder.folders.count, folder.items.count)) }
+                return (workbookID, folder.id, itemIndex)
             case .item:
                 return nil
             }
@@ -463,9 +532,8 @@ struct LibraryOutlineView: NSViewRepresentable {
                 forClasses: [NSURL.self],
                 options: [.urlReadingFileURLsOnly: true]
             ) as? [URL] ?? []
-            let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
-            guard !pdfs.isEmpty else { return false }
-            store.add(store.makePDFItems(for: pdfs), to: workbookID, folderID: folderID)
+            guard !urls.isEmpty else { return false }
+            store.importItems(from: urls, to: workbookID, folderID: folderID)
             return true
         }
 
@@ -477,6 +545,17 @@ struct LibraryOutlineView: NSViewRepresentable {
             for row in outlineView.selectedRowIndexes {
                 if case .item(let item, _)? = (outlineView.item(atRow: row) as? LibraryNode)?.kind {
                     result.insert(item.id)
+                }
+            }
+            return result
+        }
+
+        private func selectionFolderIDs() -> Set<UUID> {
+            guard let outlineView else { return [] }
+            var result: Set<UUID> = []
+            for row in outlineView.selectedRowIndexes {
+                if case .folder(let folder, _)? = (outlineView.item(atRow: row) as? LibraryNode)?.kind {
+                    result.insert(folder.id)
                 }
             }
             return result
@@ -517,6 +596,8 @@ struct LibraryOutlineView: NSViewRepresentable {
                 Task { @MainActor in
                     AgentChatModel.shared.openSavedQuiz(at: url)
                 }
+            case .file:
+                NSWorkspace.shared.open(url)
             }
         }
 
@@ -534,15 +615,15 @@ struct LibraryOutlineView: NSViewRepresentable {
             let menu = NSMenu()
             switch clicked.kind {
             case .workbook(let workbook):
+                add(menu, "Add…", #selector(menuAdd))
                 add(menu, "New Folder…", #selector(menuNewFolder))
-                add(menu, "Add Files…", #selector(menuAddFiles))
                 add(menu, "Add Current Document", #selector(menuAddCurrent))
                 menu.addItem(.separator())
                 add(menu, "Rename…", #selector(menuRename))
                 add(menu, "Delete", #selector(menuDelete))
                 menuItemsContext = (workbook, nil)
             case .folder(let folder, let workbookID):
-                add(menu, "Add Files…", #selector(menuAddFiles))
+                add(menu, "Add…", #selector(menuAdd))
                 add(menu, "Add Current Document", #selector(menuAddCurrent))
                 menu.addItem(.separator())
                 add(menu, "Rename Folder…", #selector(menuRenameFolder))
@@ -552,6 +633,9 @@ struct LibraryOutlineView: NSViewRepresentable {
             case .item:
                 add(menu, "Open", #selector(menuOpen))
                 add(menu, "Show in Finder", #selector(menuReveal))
+                add(menu, "Copy Path", #selector(menuCopyPath))
+                add(menu, "Rename…", #selector(menuRenameItem))
+                add(menu, "Duplicate", #selector(menuDuplicateItem))
                 menu.addItem(.separator())
                 add(menu, "Remove from Workbook", #selector(menuRemove))
             }
@@ -586,6 +670,95 @@ struct LibraryOutlineView: NSViewRepresentable {
             }
         }
 
+        @objc private func menuCopyPath() {
+            guard case .item(let item, _)? = menuClickedNode?.kind else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(item.path, forType: .string)
+        }
+
+        @objc private func menuRenameItem() {
+            guard case .item(let item, let workbookID)? = menuClickedNode?.kind else { return }
+
+            let ext = (item.path as NSString).pathExtension
+            let currentName = (item.path as NSString).lastPathComponent
+            let base = (currentName as NSString).deletingPathExtension
+            guard let entered = prompt("Rename", "Enter a new name.", base) else { return }
+
+            let trimmed = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+
+            let exists = FileManager.default.fileExists(atPath: item.path)
+            let directory = (item.path as NSString).deletingLastPathComponent
+            let fileName = ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+            let newPath = (directory as NSString).appendingPathComponent(fileName)
+
+            if exists, newPath != item.path {
+                if FileManager.default.fileExists(atPath: newPath) {
+                    showAlert("Couldn’t rename", "A file named “\(fileName)” already exists.")
+                    return
+                }
+                do {
+                    try FileManager.default.moveItem(atPath: item.path, toPath: newPath)
+                } catch {
+                    showAlert("Couldn’t rename", error.localizedDescription)
+                    return
+                }
+            }
+
+            let url = URL(fileURLWithPath: newPath)
+            store.updateItem(
+                id: item.id,
+                in: workbookID,
+                title: trimmed,
+                path: newPath,
+                bookmark: exists ? SessionStore.makeBookmark(for: url) : item.bookmark
+            )
+        }
+
+        @objc private func menuDuplicateItem() {
+            guard case .item(let item, let workbookID)? = menuClickedNode?.kind else { return }
+            guard FileManager.default.fileExists(atPath: item.path) else {
+                showAlert("Couldn’t duplicate", "“\(item.title)” could not be found on disk.")
+                return
+            }
+
+            let ext = (item.path as NSString).pathExtension
+            let base = ((item.path as NSString).lastPathComponent as NSString).deletingPathExtension
+            let directory = (item.path as NSString).deletingLastPathComponent
+
+            func candidate(_ suffix: String) -> String {
+                let name = ext.isEmpty ? "\(base) \(suffix)" : "\(base) \(suffix).\(ext)"
+                return (directory as NSString).appendingPathComponent(name)
+            }
+
+            var newPath = candidate("copy")
+            var counter = 2
+            while FileManager.default.fileExists(atPath: newPath) {
+                newPath = candidate("copy \(counter)")
+                counter += 1
+            }
+
+            do {
+                try FileManager.default.copyItem(atPath: item.path, toPath: newPath)
+            } catch {
+                showAlert("Couldn’t duplicate", error.localizedDescription)
+                return
+            }
+
+            let url = URL(fileURLWithPath: newPath)
+            let title = (newPath as NSString).lastPathComponent
+            store.add(store.makeItem(kind: item.kind, title: title, url: url), to: workbookID)
+        }
+
+        private func showAlert(_ title: String, _ message: String) {
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+
         @objc private func menuRemove() {
             guard case .item(let clickedItem, let workbookID)? = menuClickedNode?.kind else { return }
 
@@ -607,18 +780,19 @@ struct LibraryOutlineView: NSViewRepresentable {
             }
         }
 
-        @objc private func menuAddFiles() {
+        @objc private func menuAdd() {
             let workbookID = clickedWorkbookID
             guard let workbookID,
                   let workbook = store.workbooks.first(where: { $0.id == workbookID }) else { return }
             let folderID = menuItemsContext?.folderID
             let panel = NSOpenPanel()
             panel.allowsMultipleSelection = true
-            panel.canChooseDirectories = false
-            panel.allowedContentTypes = [.pdf]
-            panel.message = "Add PDFs to “\(workbook.name)”"
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = true
+            panel.message = "Add files or folders to “\(workbook.name)”"
+            panel.prompt = "Add"
             guard panel.runModal() == .OK else { return }
-            store.add(store.makePDFItems(for: panel.urls), to: workbookID, folderID: folderID)
+            store.importItems(from: panel.urls, to: workbookID, folderID: folderID)
         }
 
         @objc private func menuAddCurrent() {

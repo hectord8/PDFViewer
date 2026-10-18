@@ -246,16 +246,26 @@ struct DocumentTabBar: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(background)
                     .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
             }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(tab.url.path)
         .contextMenu { tabMenu(for: tab) }
         .overlay(alignment: .trailing) {
@@ -297,6 +307,7 @@ struct DocumentTabBar: View {
                 }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(tab.title)
         .contextMenu { tabMenu(for: tab) }
     }
@@ -324,16 +335,26 @@ struct DocumentTabBar: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
                     .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
             }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(quiz.title)
         .contextMenu {
             Button("Close Tab") {
@@ -380,16 +401,26 @@ struct DocumentTabBar: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
                     .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
             }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(deck.deckURL?.path ?? deck.title)
         .contextMenu {
             Button("Close Tab") {
@@ -436,16 +467,26 @@ struct DocumentTabBar: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
                     .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
             }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(summary.fileURL?.path ?? summary.title)
         .contextMenu {
             Button("Close Tab") {
@@ -534,5 +575,26 @@ struct DocumentTabBar: View {
             store.closeTabsToRight(of: tab)
         }
         .disabled(!store.canCloseTabsToRight(of: tab))
+    }
+}
+
+/// Subtle hover highlight shared by the tab chips.
+struct HoverTint: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(hovering ? 0.05 : 0))
+                    .allowsHitTesting(false)
+            }
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func hoverTint() -> some View {
+        modifier(HoverTint())
     }
 }

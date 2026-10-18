@@ -12,49 +12,54 @@ struct ContentView: View {
 
             Divider()
 
-            if let workbook = activeWorkbook {
+            if let workbook = activeWorkbook, workbookHasOpenFiles(workbook) {
                 WorkbookTabBar(workbook: workbook)
                     .id("workbook-tabs")
 
                 Divider()
             }
 
-            HStack(spacing: 0) {
-                if store.showLibrary {
-                    LibrarySidebar()
-                        .frame(width: 240)
-                    Divider()
-                }
+            GeometryReader { geo in
+                let widths = panelWidths(available: geo.size.width)
 
-                if store.showAnnotations, !store.isGeneratedTabActive, let tab = store.selectedTab {
-                    PageNotesPanel(tab: tab)
-                        .id("annotation-\(tab.id)")
-                        .frame(width: store.notesPanelWidth)
-
-                    PanelResizeHandle(side: .trailing, width: $store.notesPanelWidth, range: 180...560) {
-                        store.persistPanelWidths()
-                    }
-                }
-
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                        store.open(providers: providers)
+                HStack(spacing: 0) {
+                    if store.showLibrary {
+                        LibrarySidebar()
+                            .frame(width: widths.library)
+                        Divider()
                     }
 
-                if store.showAgentPanel {
-                    PanelResizeHandle(side: .leading, width: $store.agentPanelWidth, range: 260...680) {
-                        store.persistPanelWidths()
+                    if store.showAnnotations, !store.isGeneratedTabActive, let tab = store.selectedTab {
+                        PageNotesPanel(tab: tab)
+                            .id("annotation-\(tab.id)")
+                            .frame(width: widths.notes)
+
+                        PanelResizeHandle(side: .trailing, width: $store.notesPanelWidth, range: 180...560) {
+                            store.persistPanelWidths()
+                        }
                     }
 
-                    AgentChatPanel()
-                        .id("agent-panel")
-                        .frame(width: store.agentPanelWidth)
+                    content
+                        .frame(minWidth: minContentWidth, maxWidth: .infinity, maxHeight: .infinity)
+                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                            store.open(providers: providers)
+                        }
+
+                    if store.showAgentPanel {
+                        PanelResizeHandle(side: .leading, width: $store.agentPanelWidth, range: 260...680) {
+                            store.persistPanelWidths()
+                        }
+
+                        AgentChatPanel()
+                            .id("agent-panel")
+                            .frame(width: widths.agent)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: minContentWidth + 120, minHeight: 480)
         .toolbar { toolbarContent }
         .onAppear {
             agent.refreshSavedDecks()
@@ -81,8 +86,66 @@ struct ContentView: View {
     }
 
     private var activeWorkbook: Workbook? {
-        guard let id = workbooks.activeWorkbookID else { return nil }
-        return workbooks.workbooks.first { $0.id == id }
+        if let id = workbooks.activeWorkbookID,
+           let workbook = workbooks.workbooks.first(where: { $0.id == id }) {
+            return workbook
+        }
+        // Fall back to the workbook that owns the document currently open.
+        if let path = store.selectedTab?.url.path,
+           let workbook = workbooks.workbooks.first(where: { $0.containsPath(path) }) {
+            return workbook
+        }
+        return nil
+    }
+
+    /// Whether any of the workbook's files are open (so the strip is only shown
+    /// when it actually has tabs, never as a permanent empty bar).
+    private func workbookHasOpenFiles(_ workbook: Workbook) -> Bool {
+        var paths: Set<String> = []
+        func collect(_ folders: [WorkbookFolder], _ items: [WorkbookItem]) {
+            for folder in folders { collect(folder.folders, folder.items) }
+            paths.formUnion(items.map(\.path))
+        }
+        collect(workbook.folders, workbook.items)
+
+        if store.tabs.contains(where: { paths.contains($0.url.path) }) { return true }
+        if store.summaries.contains(where: { $0.fileURL.map { paths.contains($0.path) } ?? false }) { return true }
+        if store.flashcards.contains(where: { $0.deckURL.map { paths.contains($0.path) } ?? false }) { return true }
+        if store.quizzes.contains(where: { $0.fileURL.map { paths.contains($0.path) } ?? false }) { return true }
+        return false
+    }
+
+    private let libraryWidth: CGFloat = 240
+    private let minLibraryWidth: CGFloat = 180
+    private let minNotesWidth: CGFloat = 150
+    private let minAgentWidth: CGFloat = 220
+    private let minContentWidth: CGFloat = 360
+
+    /// Shrinks the side panels so the document always keeps a usable width,
+    /// and restores the preferred widths when the window grows again.
+    private func panelWidths(available: CGFloat) -> (library: CGFloat, notes: CGFloat, agent: CGFloat) {
+        let showingNotes = store.showAnnotations && !store.isGeneratedTabActive && store.selectedTab != nil
+
+        var library = store.showLibrary ? libraryWidth : 0
+        var notes = showingNotes ? CGFloat(store.notesPanelWidth) : 0
+        var agent = store.showAgentPanel ? CGFloat(store.agentPanelWidth) : 0
+
+        var overflow = library + notes + agent + minContentWidth - available
+
+        if overflow > 0, showingNotes {
+            let reduce = min(overflow, notes - minNotesWidth)
+            if reduce > 0 { notes -= reduce; overflow -= reduce }
+        }
+        if overflow > 0, store.showAgentPanel {
+            let reduce = min(overflow, agent - minAgentWidth)
+            if reduce > 0 { agent -= reduce; overflow -= reduce }
+        }
+        if overflow > 0, store.showLibrary {
+            let reduce = min(overflow, library - minLibraryWidth)
+            if reduce > 0 { library -= reduce; overflow -= reduce }
+        }
+
+        return (library, notes, agent)
     }
 
     @ViewBuilder
@@ -128,6 +191,13 @@ struct ContentView: View {
                 Image(systemName: "bubble.left.and.bubble.right")
             }
             .help("Workbook Assistant")
+
+            Button {
+                TodoWindowController.shared.toggle()
+            } label: {
+                Image(systemName: "checklist")
+            }
+            .help("Tasks")
         }
 
         if let tab = store.activeTab, !store.isGeneratedTabActive {

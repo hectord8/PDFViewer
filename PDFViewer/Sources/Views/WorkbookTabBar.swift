@@ -27,8 +27,8 @@ struct WorkbookTabBar: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 } else {
-                    ForEach(openEntries, id: \.item.id) { entry in
-                        button(for: entry)
+                    ForEach(Array(openEntries.enumerated()), id: \.element.item.id) { index, entry in
+                        button(for: entry, index: index)
                     }
                 }
             }
@@ -58,6 +58,9 @@ struct WorkbookTabBar: View {
         let isActive: Bool
         let select: () -> Void
         let close: () -> Void
+        let split: (() -> Void)?
+        let reload: (() -> Void)?
+        let duplicate: (() -> Void)?
     }
 
     private var openEntries: [Entry] {
@@ -72,7 +75,10 @@ struct WorkbookTabBar: View {
                     folder: folder,
                     isActive: store.activeTab?.id == tab.id,
                     select: { store.select(tab) },
-                    close: { store.closeTab(tab) }
+                    close: { store.closeTab(tab) },
+                    split: { store.split(with: tab) },
+                    reload: { store.reload(tab) },
+                    duplicate: { store.duplicate(tab) }
                 ))
             case .summary:
                 guard let summary = store.summaries.first(where: { $0.fileURL?.path == item.path }) else { return }
@@ -81,7 +87,10 @@ struct WorkbookTabBar: View {
                     folder: folder,
                     isActive: store.selectedSummaryID == summary.id,
                     select: { store.selectSummary(summary) },
-                    close: { store.closeSummary(summary) }
+                    close: { store.closeSummary(summary) },
+                    split: nil,
+                    reload: nil,
+                    duplicate: nil
                 ))
             case .deck:
                 guard let deck = store.flashcards.first(where: { $0.deckURL?.path == item.path }) else { return }
@@ -90,8 +99,13 @@ struct WorkbookTabBar: View {
                     folder: folder,
                     isActive: store.selectedFlashcardID == deck.id,
                     select: { store.selectFlashcard(deck) },
-                    close: { store.closeFlashcard(deck) }
+                    close: { store.closeFlashcard(deck) },
+                    split: nil,
+                    reload: nil,
+                    duplicate: nil
                 ))
+            case .file:
+                return
             case .quiz:
                 guard let quiz = store.quizzes.first(where: { $0.fileURL?.path == item.path }) else { return }
                 result.append(Entry(
@@ -99,23 +113,28 @@ struct WorkbookTabBar: View {
                     folder: folder,
                     isActive: store.selectedQuizID == quiz.id,
                     select: { store.selectQuiz(quiz) },
-                    close: { store.closeQuiz(quiz) }
+                    close: { store.closeQuiz(quiz) },
+                    split: nil,
+                    reload: nil,
+                    duplicate: nil
                 ))
             }
         }
 
-        for folder in workbook.folders {
-            for item in folder.items {
-                consider(item, folder: folder.name)
+        func walk(_ folders: [WorkbookFolder], items: [WorkbookItem], folderName: String?) {
+            for folder in folders {
+                walk(folder.folders, items: folder.items, folderName: folder.name)
+            }
+            for item in items {
+                consider(item, folder: folderName)
             }
         }
-        for item in workbook.items {
-            consider(item, folder: nil)
-        }
+
+        walk(workbook.folders, items: workbook.items, folderName: nil)
         return result
     }
 
-    private func button(for entry: Entry) -> some View {
+    private func button(for entry: Entry, index: Int) -> some View {
         Button {
             entry.select()
         } label: {
@@ -137,25 +156,82 @@ struct WorkbookTabBar: View {
                     .truncationMode(.middle)
                     .foregroundStyle(entry.isActive ? Color.primary : .secondary)
             }
-            .padding(.horizontal, 8)
+            .padding(.leading, 8)
+            .padding(.trailing, 20)
             .padding(.vertical, 3)
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(entry.isActive ? Color(nsColor: .controlBackgroundColor) : .clear)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(Color.primary.opacity(entry.isActive ? 0.10 : 0.06), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
+        .hoverTint()
         .help(entry.item.path)
         .contextMenu {
+            if let split = entry.split {
+                Button("Open in Split View") {
+                    split()
+                }
+            }
+            if store.isSplit {
+                Button("Close Split View") {
+                    store.collapseSplit()
+                }
+            }
+
+            if let reload = entry.reload {
+                Button("Reload") { reload() }
+            }
+            if let duplicate = entry.duplicate {
+                Button("Duplicate") { duplicate() }
+            }
+
+            Divider()
+
             Button("Close Tab") {
                 entry.close()
             }
+            Button("Close Other Tabs") {
+                closeOthers(keeping: entry)
+            }
+            .disabled(openEntries.count <= 1)
+            Button("Close Tabs to the Right") {
+                closeToRight(of: index)
+            }
+            .disabled(index >= openEntries.count - 1)
+            Button("Reopen Closed Tab") {
+                store.reopenClosedTab()
+            }
+            .disabled(!store.canReopenClosedTab)
         }
+        .overlay(alignment: .trailing) {
+            Button {
+                entry.close()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(entry.isActive ? 1 : 0.55))
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 3)
+            .help("Close this tab")
+        }
+    }
+
+    private func closeOthers(keeping entry: Entry) {
+        openEntries.filter { $0.item.id != entry.item.id }.forEach { $0.close() }
+    }
+
+    private func closeToRight(of index: Int) {
+        guard index + 1 < openEntries.count else { return }
+        openEntries[(index + 1)...].forEach { $0.close() }
     }
 
     private func icon(_ kind: WorkbookItemKind) -> String {
@@ -164,6 +240,7 @@ struct WorkbookTabBar: View {
         case .summary: return "doc.plaintext"
         case .deck: return "rectangle.on.rectangle"
         case .quiz: return "checklist"
+        case .file: return "doc"
         }
     }
 }

@@ -33,56 +33,62 @@ struct AgentChatPanel: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: "sparkles")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.accentColor.opacity(0.12)))
 
-            Text("opencode")
-                .font(.headline)
-
-            statusBadge
+            VStack(alignment: .leading, spacing: 1) {
+                Text("opencode")
+                    .font(.system(size: 13, weight: .semibold))
+                statusBadge
+            }
 
             Spacer()
 
-            Button {
+            headerButton("square.and.pencil", help: "Start a new conversation") {
                 model.newChat()
-            } label: {
-                Image(systemName: "square.and.pencil")
             }
-            .buttonStyle(.plain)
-            .help("Start a new conversation")
             .disabled(model.messages.isEmpty)
 
-            Button {
+            headerButton("gearshape", help: "Connection settings") {
                 showSettings.toggle()
-            } label: {
-                Image(systemName: "gearshape")
             }
-            .buttonStyle(.plain)
-            .help("Connection settings")
 
-            Button {
+            headerButton("sidebar.right", help: "Hide the agent panel") {
                 store.showAgentPanel = false
-            } label: {
-                Image(systemName: "sidebar.right")
             }
-            .buttonStyle(.plain)
-            .help("Hide the agent panel")
         }
         .padding(.horizontal, 12)
-        .frame(height: 42)
+        .frame(height: 50)
+        .background(.bar)
+    }
+
+    private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .hoverTint()
+        .help(help)
     }
 
     private var statusBadge: some View {
         Button {
             Task { await model.connect() }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 6, height: 6)
                 Text(model.status.shortLabel)
-                    .font(.caption2)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
         }
@@ -126,20 +132,37 @@ struct AgentChatPanel: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 20))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Color.accentColor.opacity(0.10)))
+
             Text("Ask about this document")
-                .font(.callout.weight(.semibold))
-            Text("Attach the context you want considered, then ask a question. Select “Whole document” to let opencode reference the entire PDF.")
+                .font(.system(size: 14, weight: .semibold))
+
+            Text("Choose the context, then ask a question. Select “Whole workbook” to search across everything in your workbook.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 20)
     }
 
     private func bubble(for message: AgentChatModel.ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .top, spacing: 8) {
             if message.role == .user {
-                Spacer(minLength: 44)
+                Spacer(minLength: 40)
+            } else {
+                Image(systemName: message.role == .error ? "exclamationmark.triangle.fill" : "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(message.role == .error ? Color.red : Color.accentColor)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        Circle().fill((message.role == .error ? Color.red : Color.accentColor).opacity(0.12))
+                    )
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -157,19 +180,19 @@ struct AgentChatPanel: View {
                         .font(.callout)
                         .textSelection(.enabled)
                 case .error:
-                    Label(message.text, systemImage: "exclamationmark.triangle")
+                    Text(message.text)
                         .font(.callout)
                         .textSelection(.enabled)
+                        .foregroundStyle(.red)
                 }
             }
-            .padding(message.role == .assistant ? 0 : 10)
+            .padding(message.role == .user ? 10 : 0)
             .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
-            .background(message.role == .assistant ? Color.clear : bubbleBackground(for: message.role))
+            .background(message.role == .user ? Color.accentColor.opacity(0.16) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .foregroundStyle(message.role == .error ? Color.red : Color.primary)
 
             if message.role != .user {
-                Spacer(minLength: 44)
+                Spacer(minLength: 40)
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -217,7 +240,9 @@ struct AgentChatPanel: View {
                 }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
     }
 
     private var logConsole: some View {
@@ -288,61 +313,92 @@ struct AgentChatPanel: View {
     }
 
     private var composer: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Text("Context")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("Context", selection: $model.contextScope) {
-                    ForEach(AgentChatModel.ContextScope.allCases) { scope in
-                        Text(scope.label).tag(scope)
+        HStack(alignment: .bottom, spacing: 6) {
+            Menu {
+                ForEach(AgentChatModel.ContextScope.allCases) { scope in
+                    Button {
+                        model.contextScope = scope
+                    } label: {
+                        Label(scope.label, systemImage: contextSymbol(scope))
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
-                Spacer()
-            }
-
-            HStack(alignment: .bottom, spacing: 8) {
-                ZStack(alignment: .topLeading) {
-                    CommandLineField(
-                        text: $model.input,
-                        onSubmit: { send() },
-                        onPrevious: { model.recallPrevious() },
-                        onNext: { model.recallNext() },
-                        onEdited: { model.resetHistoryCursor() }
-                    )
-
-                    if model.input.isEmpty {
-                        Text("Ask a question about this document…")
-                            .font(.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.leading, 8)
-                            .padding(.top, 6)
-                            .allowsHitTesting(false)
-                    }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: contextSymbol(model.contextScope))
+                        .font(.system(size: 11))
+                    Text(contextShortLabel(model.contextScope))
+                        .font(.system(size: 11, weight: .medium))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 7, weight: .semibold))
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Context: \(model.contextScope.label)")
+            .padding(.bottom, 1)
+
+            ZStack(alignment: .topLeading) {
+                CommandLineField(
+                    text: $model.input,
+                    onSubmit: { send() },
+                    onPrevious: { model.recallPrevious() },
+                    onNext: { model.recallNext() },
+                    onEdited: { model.resetHistoryCursor() }
                 )
 
-                Button {
-                    send()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
+                if model.input.isEmpty {
+                    Text("Ask about this document…")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 5)
+                        .padding(.top, 3)
+                        .allowsHitTesting(false)
                 }
-                .buttonStyle(.plain)
-                .disabled(!model.canSend)
-                .help("Send")
             }
+
+            Button {
+                send()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 22))
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canSend)
+            .padding(.bottom, 1)
+            .help("Send")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func contextSymbol(_ scope: AgentChatModel.ContextScope) -> String {
+        switch scope {
+        case .wholeDocument: return "doc.text"
+        case .workbook: return "books.vertical"
+        case .currentPage: return "doc"
+        case .none: return "slash.circle"
+        }
+    }
+
+    private func contextShortLabel(_ scope: AgentChatModel.ContextScope) -> String {
+        switch scope {
+        case .wholeDocument: return "Document"
+        case .workbook: return "Workbook"
+        case .currentPage: return "Page"
+        case .none: return "No context"
         }
     }
 
@@ -435,16 +491,16 @@ struct AgentChatPanel: View {
     // MARK: - Actions
 
     private func send() {
-        let context = contextForScope()
+        let context = contextForScope(query: model.input)
         Task { await model.send(context: context) }
     }
 
-    private func contextForScope() -> String? {
+    private func contextForScope(query: String) -> String? {
         switch model.contextScope {
         case .none:
             return nil
         case .workbook:
-            return AgentChatModel.workbookContext(focusPath: store.activeTab?.url.path)
+            return AgentChatModel.workbookContext(query: query, focusPath: store.activeTab?.url.path)
         case .currentPage, .wholeDocument:
             guard let tab = store.activeTab else { return nil }
             return AgentChatModel.context(for: tab, scope: model.contextScope)
@@ -483,7 +539,7 @@ struct CommandLineField: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainerInset = NSSize(width: 8, height: 6)
+        textView.textContainerInset = NSSize(width: 8, height: 3)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.heightTracksTextView = false
@@ -529,7 +585,7 @@ final class CommandLineTextView: NSTextView {
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
 
-    private let minHeight: CGFloat = 32
+    private let minHeight: CGFloat = 18
     private let maxHeight: CGFloat = 148
     private var lastMeasuredWidth: CGFloat = 0
 

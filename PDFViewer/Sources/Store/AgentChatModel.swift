@@ -439,7 +439,7 @@ final class AgentChatModel: ObservableObject {
 
         do {
             let session = try await ensureWorkbookSession(client: client)
-            let context = Self.workbookContext()
+            let context = Self.workbookContext(query: prompt)
 
             let payload: String
             if let context, !context.isEmpty {
@@ -545,9 +545,12 @@ final class AgentChatModel: ObservableObject {
         }
     }
 
-    /// Sends the reader's answers to opencode and records the per-question marks.
+    /// Marks only the questions the reader has answered so far, merging the
+    /// results in (so a quiz can be marked without completing every question).
     func mark(_ quiz: QuizTab) async {
-        guard !quiz.isMarking, !quiz.marked else { return }
+        guard !quiz.isMarking else { return }
+        let pending = quiz.pending
+        guard !pending.isEmpty else { return }
         guard let client else {
             log("Can’t mark — not connected to opencode.")
             return
@@ -555,24 +558,46 @@ final class AgentChatModel: ObservableObject {
 
         quiz.isMarking = true
         defer { quiz.isMarking = false }
-        log("Marking quiz “\(quiz.title)”…")
+        log("Marking \(pending.count) answer\(pending.count == 1 ? "" : "s") in “\(quiz.title)”…")
 
         do {
             let session = try await ensureSession(client: client)
-            let request = Self.quizGradingRequest(quiz: quiz)
+            let request = Self.quizGradingRequest(quiz: quiz, pending: pending)
             let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
 
-            guard let results = Self.parseGrading(reply, questions: quiz.questions) else {
+            guard let graded = Self.parseGrading(reply) else {
                 log("Couldn’t read the marking result — try again.")
                 return
             }
 
+            var results = quiz.results
+            for entry in graded {
+                guard let match = pending.first(where: { $0.index == entry.index }) else { continue }
+                let proposed = entry.awarded ?? (entry.correct ? match.question.marks : 0)
+                let awarded = min(max(proposed, 0), match.question.marks)
+                results.removeAll { $0.questionID == match.question.id }
+                results.append(
+                    QuizResult(
+                        questionID: match.question.id,
+                        correct: entry.correct,
+                        awarded: awarded,
+                        feedback: entry.feedback
+                    )
+                )
+            }
             quiz.results = results
-            quiz.marked = true
-            log("Marked “\(quiz.title)” — \(results.filter(\.correct).count)/\(quiz.questions.count) correct.")
+            quiz.marked = !results.isEmpty
+            log("Marked \(graded.count) answer\(graded.count == 1 ? "" : "s").")
         } catch {
             log("Marking failed — \(Self.describe(error))")
         }
+    }
+
+    private struct GradedResult {
+        let index: Int
+        let correct: Bool
+        let awarded: Int?
+        let feedback: String
     }
 
     private struct ParsedQuiz {
@@ -620,25 +645,22 @@ final class AgentChatModel: ObservableObject {
         return ParsedQuiz(title: payload.title, questions: questions)
     }
 
-    private static func parseGrading(_ text: String, questions: [QuizQuestion]) -> [QuizResult]? {
+    private static func parseGrading(_ text: String) -> [GradedResult]? {
         guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
               let payload = try? JSONDecoder().decode(GradePayload.self, from: data),
               let items = payload.results, !items.isEmpty else {
             return nil
         }
 
-        var results: [QuizResult] = []
+        var results: [GradedResult] = []
         for (position, item) in items.enumerated() {
             let index = item.index ?? (position + 1)
-            guard index >= 1, index <= questions.count else { continue }
-            let marks = questions[index - 1].marks
-            let correct = item.correct ?? false
-            let awarded = min(max(item.awarded ?? (correct ? marks : 0), 0), marks)
+            guard index >= 1 else { continue }
             results.append(
-                QuizResult(
+                GradedResult(
                     index: index,
-                    correct: correct,
-                    awarded: awarded,
+                    correct: item.correct ?? false,
+                    awarded: item.awarded,
                     feedback: item.feedback?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 )
             )
@@ -684,12 +706,13 @@ final class AgentChatModel: ObservableObject {
         return request + "\n\nRequest: \(prompt)"
     }
 
-    private static func quizGradingRequest(quiz: QuizTab) -> String {
+    private static func quizGradingRequest(quiz: QuizTab, pending: [(index: Int, question: QuizQuestion)]) -> String {
         var lines: [String] = []
-        for (index, question) in quiz.questions.enumerated() {
-            let student = quiz.answers.indices.contains(index) ? quiz.answers[index] : ""
+        for entry in pending {
+            let question = entry.question
+            let student = quiz.answers.indices.contains(entry.index - 1) ? quiz.answers[entry.index - 1] : ""
             lines.append("""
-            Question \(index + 1) (worth \(question.marks) mark\(question.marks == 1 ? "" : "s")):
+            Question \(entry.index) (worth \(question.marks) mark\(question.marks == 1 ? "" : "s")):
             Q: \(question.prompt)
             Model answer: \(question.answer)
             Student answer: \(student.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(no answer)" : student)
@@ -697,8 +720,9 @@ final class AgentChatModel: ObservableObject {
         }
 
         return """
-        Mark this quiz. For each question decide whether the student's answer is correct, award an integer from 0 to the question's marks, and give one short sentence of feedback. Be tolerant of different wording; an empty answer is incorrect. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        Mark only the questions listed below. For each, decide whether the student's answer is correct, award an integer from 0 to the question's marks, and give one short sentence of feedback. Be tolerant of different wording. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
         {"results": [{"index": 1, "correct": true, "awarded": 1, "feedback": "why"}]}
+        Use each question's given number as its "index".
 
         \(lines.joined(separator: "\n\n"))
         """
@@ -1657,6 +1681,7 @@ final class AgentChatModel: ObservableObject {
         case .summary: folderName = "Summaries"
         case .deck: folderName = "Flashcards"
         case .quiz: folderName = "Quizzes"
+        case .file: folderName = "Files"
         }
 
         let folderID: UUID?
@@ -1776,39 +1801,135 @@ final class AgentChatModel: ObservableObject {
 
     private static var workbookCache: [UUID: (signature: String, text: String)] = [:]
 
+    // MARK: - Workbook topic index (retrieval)
+
+    fileprivate struct WorkbookChunk {
+        let title: String
+        let page: Int?
+        let path: String
+        let text: String
+        let termCounts: [String: Int]
+    }
+
+    fileprivate struct WorkbookIndex {
+        let signature: String
+        let chunks: [WorkbookChunk]
+        let documentFrequency: [String: Int]
+    }
+
+    private static var workbookIndexCache: [UUID: WorkbookIndex] = [:]
+
+    private static let stopWords: Set<String> = [
+        "the", "a", "an", "and", "or", "of", "to", "in", "is", "are", "was", "were", "be", "been",
+        "it", "its", "this", "that", "these", "those", "for", "on", "with", "as", "at", "by", "from",
+        "into", "than", "then", "so", "such", "but", "not", "no", "can", "could", "should", "would",
+        "may", "might", "will", "shall", "do", "does", "did", "has", "have", "had", "how", "what",
+        "when", "where", "which", "who", "whom", "why", "if", "about", "your", "you", "their", "they",
+        "them", "he", "she", "his", "her", "we", "our", "us", "i", "explain", "describe", "tell", "me",
+        "give", "list", "question", "answer", "please"
+    ]
+
+    private static func tokenize(_ text: String) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for raw in text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            let token = String(raw)
+            guard token.count >= 3, !stopWords.contains(token) else { continue }
+            counts[token, default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func workbookIndex(for workbook: Workbook, store: WorkbookStore) -> WorkbookIndex {
+        var items: [WorkbookItem] = []
+        func collect(_ folders: [WorkbookFolder]) {
+            for folder in folders {
+                collect(folder.folders)
+                items.append(contentsOf: folder.items)
+            }
+        }
+        collect(workbook.folders)
+        items.append(contentsOf: workbook.items)
+
+        var chunks: [WorkbookChunk] = []
+        for item in items {
+            switch item.kind {
+            case .summary:
+                guard let url = store.url(for: item),
+                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                chunks.append(WorkbookChunk(title: item.title, page: nil, path: item.path, text: text, termCounts: tokenize(text)))
+            case .pdf:
+                guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
+                for index in 0..<document.pageCount {
+                    guard let page = document.page(at: index),
+                          let text = page.string,
+                          !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    chunks.append(WorkbookChunk(title: item.title, page: index + 1, path: item.path, text: text, termCounts: tokenize(text)))
+                }
+            case .deck, .quiz, .file:
+                continue
+            }
+        }
+
+        var df: [String: Int] = [:]
+        for chunk in chunks {
+            for key in chunk.termCounts.keys {
+                df[key, default: 0] += 1
+            }
+        }
+
+        let signature = workbook.id.uuidString + "|"
+            + items.map { "\($0.kind.rawValue):\($0.path)" }.joined(separator: "|")
+        return WorkbookIndex(signature: signature, chunks: chunks, documentFrequency: df)
+    }
+
     /// Context assembled from the active workbook. When `focusPath` is set (the
     /// open PDF) its text comes first, so the model focuses on it while still
     /// having the whole workbook available. Distilled Markdown summaries are
     /// included next (cheap), then the remaining PDFs, up to a total budget.
     /// Cached until the workbook's contents change.
-    static func workbookContext(focusPath: String? = nil) -> String? {
+    static func workbookContext(query: String? = nil, focusPath: String? = nil) -> String? {
         let store = WorkbookStore.shared
-        guard let id = store.activeWorkbookID,
-              let workbook = store.workbooks.first(where: { $0.id == id }) else {
-            return nil
+
+        // Prefer the explicitly-active workbook, else the one that owns the
+        // document currently open — so this is always the *whole* workbook.
+        var resolved: Workbook?
+        if let id = store.activeWorkbookID {
+            resolved = store.workbooks.first(where: { $0.id == id })
         }
+        if resolved == nil, let path = LibraryStore.shared.selectedTab?.url.path {
+            resolved = store.workbooks.first(where: { $0.containsPath(path) })
+        }
+        guard let workbook = resolved else { return nil }
+        let id = workbook.id
 
         var items: [WorkbookItem] = []
-        for folder in workbook.folders {
-            items.append(contentsOf: folder.items)
+        func collect(_ folders: [WorkbookFolder]) {
+            for folder in folders {
+                collect(folder.folders)
+                items.append(contentsOf: folder.items)
+            }
         }
+        collect(workbook.folders)
         items.append(contentsOf: workbook.items)
         guard !items.isEmpty else { return nil }
 
-        let signature = (focusPath ?? "")
+        let signature = (focusPath ?? "") + "|" + (query ?? "")
             + "|" + items.map { "\($0.kind.rawValue):\($0.path)" }.joined(separator: "|")
         if let cached = workbookCache[id], cached.signature == signature {
             return cached.text
         }
 
-        var ordered: [WorkbookItem] = []
-        if let focusPath, let focus = items.first(where: { $0.path == focusPath }) {
-            ordered.append(focus)
-        }
-        ordered.append(contentsOf: items.filter { $0.path != focusPath && $0.kind == .summary })
-        ordered.append(contentsOf: items.filter { $0.path != focusPath && $0.kind == .pdf })
+        let summaries = items.filter { $0.kind == .summary }
+        let pdfs = items.filter { $0.kind == .pdf }
 
-        let budget = 60_000
+        var orderedPDFs: [WorkbookItem] = []
+        if let focusPath, let focus = pdfs.first(where: { $0.path == focusPath }) {
+            orderedPDFs.append(focus)
+        }
+        orderedPDFs.append(contentsOf: pdfs.filter { $0.path != focusPath })
+
+        let budget = 80_000
+        let perDocumentCap = max(3_000, budget / max(1, orderedPDFs.count))
         var pieces: [String] = []
         var used = 0
 
@@ -1829,29 +1950,63 @@ final class AgentChatModel: ObservableObject {
             return true
         }
 
-        outer: for item in ordered {
-            if used >= budget { break outer }
+        // Distilled Markdown summaries first — small, and they cover the workbook.
+        for item in summaries {
+            if used >= budget { break }
+            guard let url = store.url(for: item),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if !append(item.title, text) { break }
+        }
 
-            switch item.kind {
-            case .summary:
-                guard let url = store.url(for: item),
-                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                if !append(item.title, text) { break outer }
+        // Retrieval: pull just the sections relevant to the question from the
+        // topic index, so specific topics are answered from the right pages
+        // instead of a fixed slice of the workbook.
+        let queryTokens = Set(tokenize(query ?? "").keys)
+        if !queryTokens.isEmpty {
+            let index = workbookIndex(for: workbook, store: store)
+            let total = max(1, index.chunks.count)
 
-            case .pdf:
-                guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
-                var text = ""
-                for index in 0..<document.pageCount {
-                    guard let page = document.page(at: index), let pageText = page.string, !pageText.isEmpty else { continue }
-                    text += "\n--- Page \(index + 1) ---\n\(pageText)"
-                    if used + text.count > budget { break }
+            var scored: [(chunk: WorkbookChunk, score: Double)] = []
+            for chunk in index.chunks where chunk.page != nil {
+                var score = 0.0
+                for token in queryTokens {
+                    guard let tf = chunk.termCounts[token] else { continue }
+                    let df = index.documentFrequency[token] ?? 1
+                    score += Double(tf) * (Darwin.log(Double(total) / Double(df)) + 1)
                 }
-                let header = item.path == focusPath ? "\(item.title) (open document)" : item.title
-                if !append(header, text) { break outer }
-
-            case .deck, .quiz:
-                continue
+                guard score > 0 else { continue }
+                if chunk.path == focusPath { score *= 1.5 }
+                scored.append((chunk, score))
             }
+            scored.sort { $0.score > $1.score }
+
+            if !scored.isEmpty {
+                for entry in scored {
+                    if used >= budget { break }
+                    let pageLabel = entry.chunk.page.map { " — page \($0)" } ?? ""
+                    if !append(entry.chunk.title + pageLabel, entry.chunk.text) { break }
+                }
+                guard !pieces.isEmpty else { return nil }
+                let header = "Workbook: \(workbook.name) — relevant sections\n\n"
+                let text = header + pieces.joined(separator: "\n\n")
+                workbookCache[id] = (signature, text)
+                return text
+            }
+        }
+
+        // No query (or no matches): represent the whole workbook, each PDF
+        // capped so one large document can't consume the entire budget.
+        for item in orderedPDFs {
+            if used >= budget { break }
+            guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
+            var text = ""
+            for index in 0..<document.pageCount {
+                guard let page = document.page(at: index), let pageText = page.string, !pageText.isEmpty else { continue }
+                text += "\n--- Page \(index + 1) ---\n\(pageText)"
+                if text.count >= perDocumentCap { break }
+            }
+            let header = item.path == focusPath ? "\(item.title) (open document)" : item.title
+            if !append(header, text) { break }
         }
 
         guard !pieces.isEmpty else { return nil }

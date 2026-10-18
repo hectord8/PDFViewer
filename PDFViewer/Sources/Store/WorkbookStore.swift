@@ -102,25 +102,37 @@ final class WorkbookStore: ObservableObject {
     // MARK: - Folders
 
     @discardableResult
-    func addFolder(named name: String, to workbookID: UUID) -> UUID? {
+    func addFolder(named name: String, to workbookID: UUID, parentFolderID: UUID? = nil) -> UUID? {
         guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return nil }
-        let folder = WorkbookFolder(name: uniqueFolderName(name, in: index))
+
+        if let parentFolderID {
+            var created: UUID?
+            _ = withFolder(parentFolderID, in: &workbooks[index].folders) { folder in
+                let new = WorkbookFolder(name: uniqueFolderName(name, among: folder.folders))
+                folder.folders.append(new)
+                created = new.id
+            }
+            guard created != nil else { return nil }
+            scheduleSave()
+            return created
+        }
+
+        let folder = WorkbookFolder(name: uniqueFolderName(name, among: workbooks[index].folders))
         workbooks[index].folders.append(folder)
         scheduleSave()
         return folder.id
     }
 
     func renameFolder(_ folderID: UUID, in workbookID: UUID, to name: String) {
-        guard let index = workbooks.firstIndex(where: { $0.id == workbookID }),
-              let folderIndex = workbooks[index].folders.firstIndex(where: { $0.id == folderID }) else { return }
-        workbooks[index].folders[folderIndex].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
+        _ = withFolder(folderID, in: &workbooks[index].folders) { folder in
+            folder.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         scheduleSave()
     }
 
     func deleteFolder(_ folderID: UUID, from workbookID: UUID) {
-        guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
-        workbooks[index].folders.removeAll { $0.id == folderID }
-        scheduleSave()
+        deleteFolders([folderID], from: workbookID)
     }
 
     // MARK: - Items
@@ -128,13 +140,21 @@ final class WorkbookStore: ObservableObject {
     func add(_ item: WorkbookItem, to workbookID: UUID, folderID: UUID? = nil) {
         guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
 
-        if let folderID, let folderIndex = workbooks[index].folders.firstIndex(where: { $0.id == folderID }) {
-            guard !workbooks[index].folders[folderIndex].items.contains(where: { $0.path == item.path }) else { return }
-            workbooks[index].folders[folderIndex].items.append(item)
-        } else {
-            guard !workbooks[index].items.contains(where: { $0.path == item.path }) else { return }
-            workbooks[index].items.append(item)
+        if let folderID {
+            var added = false
+            _ = withFolder(folderID, in: &workbooks[index].folders) { folder in
+                guard !folder.items.contains(where: { $0.path == item.path }) else { return }
+                folder.items.append(item)
+                added = true
+            }
+            if added {
+                scheduleSave()
+                return
+            }
         }
+
+        guard !workbooks[index].items.contains(where: { $0.path == item.path }) else { return }
+        workbooks[index].items.append(item)
         scheduleSave()
     }
 
@@ -146,78 +166,184 @@ final class WorkbookStore: ObservableObject {
         removeItems([item.id], from: workbookID)
     }
 
+    /// Updates an item's title/path (used after renaming the file on disk).
+    func updateItem(id: UUID, in workbookID: UUID, title: String, path: String, bookmark: Data?) {
+        guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
+
+        func update(_ items: inout [WorkbookItem]) -> Bool {
+            for position in items.indices where items[position].id == id {
+                items[position].title = title
+                items[position].path = path
+                items[position].bookmark = bookmark
+                return true
+            }
+            return false
+        }
+
+        func updateFolders(_ folders: inout [WorkbookFolder]) -> Bool {
+            for position in folders.indices {
+                if update(&folders[position].items) { return true }
+                if updateFolders(&folders[position].folders) { return true }
+            }
+            return false
+        }
+
+        if update(&workbooks[index].items) {
+            scheduleSave()
+            return
+        }
+        if updateFolders(&workbooks[index].folders) {
+            scheduleSave()
+        }
+    }
+
     func removeItems(_ ids: Set<UUID>, from workbookID: UUID) {
         guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
         workbooks[index].items.removeAll { ids.contains($0.id) }
-        for folderIndex in workbooks[index].folders.indices {
-            workbooks[index].folders[folderIndex].items.removeAll { ids.contains($0.id) }
-        }
+        var discarded: [WorkbookItem] = []
+        extractItems(ids, from: &workbooks[index].folders, into: &discarded)
         scheduleSave()
     }
 
     func deleteWorkbooks(_ ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         workbooks.removeAll { ids.contains($0.id) }
+        if let active = activeWorkbookID, ids.contains(active) {
+            activeWorkbookID = nil
+        }
+        scheduleSave()
+    }
+
+    /// Moves folders to another workbook, into a folder, or to a new position.
+    func moveFolders(_ ids: Set<UUID>, from source: UUID, to target: UUID, folderID: UUID?, index: Int?) {
+        guard !ids.isEmpty, let sourceIndex = workbooks.firstIndex(where: { $0.id == source }) else { return }
+        guard !(ids.contains(where: { $0 == folderID })) else { return }
+
+        let moving = removeFolders(ids, from: &workbooks[sourceIndex].folders)
+        guard !moving.isEmpty else { return }
+        if let folderID, moving.contains(where: { containsFolder(folderID, in: [$0]) }) { return }
+
+        guard let targetIndex = workbooks.firstIndex(where: { $0.id == target }) else { return }
+
+        if let folderID {
+            var inserted = false
+            _ = withFolder(folderID, in: &workbooks[targetIndex].folders) { folder in
+                insertFolders(moving, into: &folder.folders, at: index)
+                inserted = true
+            }
+            if !inserted {
+                insertFolders(moving, into: &workbooks[targetIndex].folders, at: index)
+            }
+        } else {
+            insertFolders(moving, into: &workbooks[targetIndex].folders, at: index)
+        }
         scheduleSave()
     }
 
     func deleteFolders(_ ids: Set<UUID>, from workbookID: UUID) {
         guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
-        workbooks[index].folders.removeAll { ids.contains($0.id) }
+        _ = removeFolders(ids, from: &workbooks[index].folders)
         scheduleSave()
     }
 
-    /// Moves items into another container. `index` inserts at a precise spot;
-    /// `nil` appends to the end.
+    /// Moves items into another container (workbook or folder). `index` inserts
+    /// at a precise spot within that container; `nil` appends.
     func moveItems(from source: UUID, ids: Set<UUID>, to target: UUID, folderID: UUID?, index: Int? = nil) {
         guard !ids.isEmpty, let sourceIndex = workbooks.firstIndex(where: { $0.id == source }) else { return }
 
-        let sameContainer = source == target
         var moving: [WorkbookItem] = []
-        var removedBefore = 0
-
         var topLevel: [WorkbookItem] = []
-        for (position, item) in workbooks[sourceIndex].items.enumerated() {
-            if ids.contains(item.id) {
-                moving.append(item)
-                if sameContainer, folderID == nil, let index, position < index { removedBefore += 1 }
-            } else {
-                topLevel.append(item)
-            }
+        for item in workbooks[sourceIndex].items {
+            if ids.contains(item.id) { moving.append(item) } else { topLevel.append(item) }
         }
         workbooks[sourceIndex].items = topLevel
-
-        for folderIndex in workbooks[sourceIndex].folders.indices {
-            let isTargetFolder = sameContainer && workbooks[sourceIndex].folders[folderIndex].id == folderID
-            var keep: [WorkbookItem] = []
-            for (position, item) in workbooks[sourceIndex].folders[folderIndex].items.enumerated() {
-                if ids.contains(item.id) {
-                    moving.append(item)
-                    if isTargetFolder, let index, position < index { removedBefore += 1 }
-                } else {
-                    keep.append(item)
-                }
-            }
-            workbooks[sourceIndex].folders[folderIndex].items = keep
-        }
+        extractItems(ids, from: &workbooks[sourceIndex].folders, into: &moving)
 
         guard let targetIndex = workbooks.firstIndex(where: { $0.id == target }) else { return }
-        let adjusted = index.map { max(0, $0 - removedBefore) }
 
-        if let folderID, let folderIndex = workbooks[targetIndex].folders.firstIndex(where: { $0.id == folderID }) {
-            workbooks[targetIndex].folders[folderIndex].items = insert(moving, into: workbooks[targetIndex].folders[folderIndex].items, at: adjusted)
+        if let folderID {
+            var inserted = false
+            _ = withFolder(folderID, in: &workbooks[targetIndex].folders) { folder in
+                folder.items = insertItems(moving, into: folder.items, at: index)
+                inserted = true
+            }
+            if !inserted {
+                workbooks[targetIndex].items = insertItems(moving, into: workbooks[targetIndex].items, at: index)
+            }
         } else {
-            workbooks[targetIndex].items = insert(moving, into: workbooks[targetIndex].items, at: adjusted)
+            workbooks[targetIndex].items = insertItems(moving, into: workbooks[targetIndex].items, at: index)
         }
         scheduleSave()
     }
 
-    private func insert(_ moving: [WorkbookItem], into items: [WorkbookItem], at index: Int?) -> [WorkbookItem] {
+    // MARK: - Recursive helpers
+
+    @discardableResult
+    private func withFolder(
+        _ id: UUID,
+        in folders: inout [WorkbookFolder],
+        _ body: (inout WorkbookFolder) -> Void
+    ) -> Bool {
+        for index in folders.indices {
+            if folders[index].id == id {
+                body(&folders[index])
+                return true
+            }
+            if withFolder(id, in: &folders[index].folders, body) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func removeFolders(_ ids: Set<UUID>, from folders: inout [WorkbookFolder]) -> [WorkbookFolder] {
+        var removed: [WorkbookFolder] = []
+        var keep: [WorkbookFolder] = []
+        for folder in folders {
+            if ids.contains(folder.id) {
+                removed.append(folder)
+            } else {
+                var copy = folder
+                removed.append(contentsOf: removeFolders(ids, from: &copy.folders))
+                keep.append(copy)
+            }
+        }
+        folders = keep
+        return removed
+    }
+
+    private func insertFolders(_ moving: [WorkbookFolder], into container: inout [WorkbookFolder], at index: Int?) {
+        let at = min(max(index ?? container.count, 0), container.count)
+        let filtered = moving.filter { move in !container.contains(where: { $0.id == move.id }) }
+        container.insert(contentsOf: filtered, at: at)
+    }
+
+    private func extractItems(_ ids: Set<UUID>, from folders: inout [WorkbookFolder], into moving: inout [WorkbookItem]) {
+        for index in folders.indices {
+            var keep: [WorkbookItem] = []
+            for item in folders[index].items {
+                if ids.contains(item.id) { moving.append(item) } else { keep.append(item) }
+            }
+            folders[index].items = keep
+            extractItems(ids, from: &folders[index].folders, into: &moving)
+        }
+    }
+
+    private func insertItems(_ moving: [WorkbookItem], into items: [WorkbookItem], at index: Int?) -> [WorkbookItem] {
         var result = items
         let filtered = moving.filter { move in !result.contains(where: { $0.path == move.path }) }
         let at = min(max(index ?? result.count, 0), result.count)
         result.insert(contentsOf: filtered, at: at)
         return result
+    }
+
+    private func containsFolder(_ id: UUID, in folders: [WorkbookFolder]) -> Bool {
+        for folder in folders {
+            if folder.id == id || containsFolder(id, in: folder.folders) {
+                return true
+            }
+        }
+        return false
     }
 
     func url(for item: WorkbookItem) -> URL? {
@@ -233,16 +359,65 @@ final class WorkbookStore: ObservableObject {
         )
     }
 
+    func makeItems(for urls: [URL]) -> [WorkbookItem] {
+        urls.map { url in
+            let kind: WorkbookItemKind = url.pathExtension.lowercased() == "pdf" ? .pdf : .file
+            return makeItem(kind: kind, title: url.deletingPathExtension().lastPathComponent, url: url)
+        }
+    }
+
     func makePDFItems(for urls: [URL]) -> [WorkbookItem] {
         urls.map { makeItem(kind: .pdf, title: $0.deletingPathExtension().lastPathComponent, url: $0) }
     }
 
+    /// Adds files and/or folders (any file type). A folder becomes a new
+    /// workbook folder containing every file found inside it (recursively).
+    func importItems(from urls: [URL], to workbookID: UUID, folderID: UUID?) {
+        var looseFiles: [URL] = []
+
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+
+            if isDirectory.boolValue {
+                let files = Self.files(in: url)
+                guard !files.isEmpty else { continue }
+                let target = addFolder(named: url.lastPathComponent, to: workbookID, parentFolderID: folderID) ?? folderID
+                add(makeItems(for: files), to: workbookID, folderID: target)
+            } else {
+                looseFiles.append(url)
+            }
+        }
+
+        if !looseFiles.isEmpty {
+            add(makeItems(for: looseFiles), to: workbookID, folderID: folderID)
+        }
+    }
+
+    private static func files(in directory: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var result: [URL] = []
+        for case let url as URL in enumerator {
+            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                result.append(url)
+            }
+        }
+        return result
+    }
+
     // MARK: - Helpers
 
-    private func uniqueFolderName(_ desired: String, in workbookIndex: Int) -> String {
+    private func uniqueFolderName(_ desired: String, among siblings: [WorkbookFolder]) -> String {
         let trimmed = desired.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmed.isEmpty ? "Folder" : trimmed
-        let existing = Set(workbooks[workbookIndex].folders.map { $0.name.lowercased() })
+        let existing = Set(siblings.map { $0.name.lowercased() })
         if !existing.contains(base.lowercased()) { return base }
         var suffix = 1
         while existing.contains("\(base) \(suffix)".lowercased()) { suffix += 1 }

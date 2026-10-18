@@ -5,6 +5,7 @@ enum WorkbookItemKind: String, Codable {
     case summary
     case deck
     case quiz
+    case file
 }
 
 struct WorkbookItem: Codable, Identifiable {
@@ -16,11 +17,45 @@ struct WorkbookItem: Codable, Identifiable {
 }
 
 /// A named group of items inside a workbook, used to separate different
-/// kinds of material (e.g. lectures vs past papers).
+/// kinds of material (e.g. lectures vs past papers). Folders can nest.
 struct WorkbookFolder: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String
     var items: [WorkbookItem] = []
+    var folders: [WorkbookFolder] = []
+
+    init(id: UUID = UUID(), name: String, items: [WorkbookItem] = [], folders: [WorkbookFolder] = []) {
+        self.id = id
+        self.name = name
+        self.items = items
+        self.folders = folders
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, items, folders
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        items = try container.decodeIfPresent([WorkbookItem].self, forKey: .items) ?? []
+        folders = try container.decodeIfPresent([WorkbookFolder].self, forKey: .folders) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(items, forKey: .items)
+        try container.encode(folders, forKey: .folders)
+    }
+
+    /// Whether this folder (at any depth) contains an item at `path`.
+    func containsPath(_ path: String) -> Bool {
+        if items.contains(where: { $0.path == path }) { return true }
+        return folders.contains { $0.containsPath(path) }
+    }
 }
 
 struct Workbook: Codable, Identifiable {
@@ -54,5 +89,11 @@ struct Workbook: Codable, Identifiable {
         try container.encode(name, forKey: .name)
         try container.encode(items, forKey: .items)
         try container.encode(folders, forKey: .folders)
+    }
+
+    /// Whether this workbook (at any depth) contains an item at `path`.
+    func containsPath(_ path: String) -> Bool {
+        if items.contains(where: { $0.path == path }) { return true }
+        return folders.contains { $0.containsPath(path) }
     }
 }

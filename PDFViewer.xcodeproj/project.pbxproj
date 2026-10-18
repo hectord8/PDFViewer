@@ -39,6 +39,9 @@
 		AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CA /* WorkbookTabBar.swift */; };
 		AA00000000000000000000CD /* AnnotationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CC /* AnnotationStore.swift */; };
 		AA00000000000000000000CF /* WorkbookChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CE /* WorkbookChatView.swift */; };
+		AA00000000000000000000E1 /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D1 /* TodoStore.swift */; };
+		AA00000000000000000000E2 /* TodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D2 /* TodoListView.swift */; };
+		AA00000000000000000000E3 /* TodoWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D3 /* TodoWindowController.swift */; };
 		D4BACBF2F94D95C59BA98E50 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -76,6 +79,9 @@
 		AA00000000000000000000CA /* WorkbookTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookTabBar.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CC /* AnnotationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationStore.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CE /* WorkbookChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookChatView.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000D1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoStore.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000D2 /* TodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoListView.swift"; sourceTree = "<group>"; };
+		AA00000000000000000000D3 /* TodoWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoWindowController.swift"; sourceTree = "<group>"; };
 		6CEF4329F2BB1DB61A5EBEE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -149,6 +155,7 @@
 				AA00000000000000000000A2 /* OpenCodeClient.swift */,
 				AA00000000000000000000CC /* AnnotationStore.swift */,
 				DCDD3BDC4EA995D1A7CF5AF5 /* SessionStore.swift */,
+				AA00000000000000000000D1 /* TodoStore.swift */,
 				AA00000000000000000000AD /* WorkbookStore.swift */,
 			);
 			path = Store;
@@ -174,6 +181,7 @@
 				0F38F7D9009CB391A159D308 /* WelcomeView.swift */,
 				AA00000000000000000000CA /* WorkbookTabBar.swift */,
 				AA00000000000000000000CE /* WorkbookChatView.swift */,
+				AA00000000000000000000D2 /* TodoListView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -266,6 +274,7 @@
 				30A6CF5657A5BD6BF03D110E /* AppDelegate.swift in Sources */,
 				B47A1212E2090A278D39A5FF /* MainMenuTweaks.swift in Sources */,
 				7F4EC69FB374DC16C2E3C1E1 /* PDFViewerApp.swift in Sources */,
+				AA00000000000000000000E3 /* TodoWindowController.swift in Sources */,
 				AA00000000000000000000B6 /* FlashcardTab.swift in Sources */,
 				E72E79B37B596ED323CA15AA /* PDFDocumentTab.swift in Sources */,
 				AA00000000000000000000B4 /* QuizTab.swift in Sources */,
@@ -275,6 +284,7 @@
 				4CD1CBC985BC155664D777F3 /* LibraryStore.swift in Sources */,
 				8DC3D38B039383E8B96F3D45 /* SessionStore.swift in Sources */,
 				AA00000000000000000000CD /* AnnotationStore.swift in Sources */,
+				AA00000000000000000000E1 /* TodoStore.swift in Sources */,
 				AA00000000000000000000BD /* WorkbookStore.swift in Sources */,
 				AA00000000000000000000B1 /* AgentChatModel.swift in Sources */,
 				AA00000000000000000000B2 /* OpenCodeClient.swift in Sources */,
@@ -295,6 +305,7 @@
 				510138CC4BC0D429CF1D39E2 /* WelcomeView.swift in Sources */,
 				AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */,
 				AA00000000000000000000CF /* WorkbookChatView.swift in Sources */,
+				AA00000000000000000000E2 /* TodoListView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

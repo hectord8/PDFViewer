@@ -8,19 +8,18 @@ struct QuizQuestion: Identifiable {
 }
 
 struct QuizResult {
-    let index: Int
+    let questionID: UUID
     let correct: Bool
     let awarded: Int
     let feedback: String
 }
 
-/// A generated, non-persisted quiz that opens as its own tab. Holds the
-/// questions, the reader's answers, and — once marked — the per-question
-/// results returned by opencode.
+/// A generated, persisted quiz that opens as its own tab. Holds the questions,
+/// the reader's answers, and the per-question results once marked.
 final class QuizTab: ObservableObject, Identifiable {
     let id = UUID()
     @Published var title: String
-    let questions: [QuizQuestion]
+    @Published private(set) var questions: [QuizQuestion]
     @Published var fileURL: URL?
 
     @Published var answers: [String]
@@ -43,16 +42,45 @@ final class QuizTab: ObservableObject, Identifiable {
         results.reduce(0) { $0 + $1.awarded }
     }
 
+    /// Total marks of the questions that have been marked so far.
+    var gradedTotalMarks: Int {
+        questions
+            .filter { question in results.contains { $0.questionID == question.id } }
+            .reduce(0) { $0 + $1.marks }
+    }
+
     var answeredCount: Int {
         answers.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
     }
 
-    var canMark: Bool {
-        !marked && !isMarking && answeredCount > 0
+    /// Answered questions that haven't been marked yet.
+    var pending: [(index: Int, question: QuizQuestion)] {
+        questions.enumerated().compactMap { offset, question in
+            let answered = answers.indices.contains(offset)
+                && !answers[offset].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasResult = results.contains { $0.questionID == question.id }
+            return answered && !hasResult ? (offset + 1, question) : nil
+        }
     }
 
-    func result(forQuestionAt index: Int) -> QuizResult? {
-        results.first { $0.index == index + 1 }
+    var canMark: Bool {
+        !isMarking && !pending.isEmpty
+    }
+
+    func result(for question: QuizQuestion) -> QuizResult? {
+        results.first { $0.questionID == question.id }
+    }
+
+    func removeQuestion(_ question: QuizQuestion) {
+        guard let index = questions.firstIndex(where: { $0.id == question.id }) else { return }
+        questions.remove(at: index)
+        if answers.indices.contains(index) {
+            answers.remove(at: index)
+        }
+        results.removeAll { $0.questionID == question.id }
+        if results.isEmpty {
+            marked = false
+        }
     }
 
     func reset() {

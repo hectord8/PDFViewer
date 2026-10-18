@@ -194,6 +194,10 @@ struct PDFViewerApp: App {
             }
             .keyboardShortcut("k", modifiers: [.command, .option])
 
+            Button(TodoWindowController.shared.isVisible ? "Hide Tasks" : "Show Tasks") {
+                TodoWindowController.shared.toggle()
+            }
+
             Divider()
 
             Button("Zoom In") {
