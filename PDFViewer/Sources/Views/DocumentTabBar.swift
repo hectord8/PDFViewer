@@ -51,6 +51,11 @@ struct DocumentTabBar: View {
                                 .id(summary.id)
                         }
 
+                        ForEach(store.notes.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { note in
+                            noteTabButton(for: note)
+                                .id(note.id)
+                        }
+
                         Button {
                             store.presentOpenPanel()
                         } label: {
@@ -197,6 +202,10 @@ struct DocumentTabBar: View {
                     withAnimation { proxy.scrollTo(newValue, anchor: .center) }
                 }
                 .onChange(of: store.selectedSummaryID) { _, newValue in
+                    guard let newValue else { return }
+                    withAnimation { proxy.scrollTo(newValue, anchor: .center) }
+                }
+                .onChange(of: store.selectedNoteID) { _, newValue in
                     guard let newValue else { return }
                     withAnimation { proxy.scrollTo(newValue, anchor: .center) }
                 }
@@ -496,6 +505,77 @@ struct DocumentTabBar: View {
         .overlay(alignment: .trailing) {
             Button {
                 store.closeSummary(summary)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(isFocusedTab ? 1 : 0.55))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help("Close this tab")
+        }
+    }
+
+    private func noteTabButton(for note: NoteTab) -> some View {
+        let isFocusedTab = store.selectedNoteID == note.id
+
+        return Button {
+            store.selectNote(note)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isFocusedTab ? Color.accentColor : .secondary)
+
+                Text(note.title)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .foregroundStyle(isFocusedTab ? Color.primary : .secondary)
+            }
+            .padding(.leading, 9)
+            .padding(.trailing, 26)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
+                    .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .hoverTint()
+        .help(note.fileURL?.path ?? note.title)
+        .contextMenu {
+            if store.selectedTab != nil {
+                Button("Split with PDF") {
+                    store.splitNoteWithPDF(note)
+                }
+            }
+            Button("Close Tab") {
+                store.closeNote(note)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                store.closeNote(note)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))

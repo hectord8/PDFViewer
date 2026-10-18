@@ -157,6 +157,27 @@ struct PDFViewerApp: App {
                     agent.refreshSavedQuizzes()
                 }
             }
+
+            Divider()
+
+            Button("New Note") {
+                store.newNote()
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
+            Menu("Open Note") {
+                let savedNotes = NotesStore.list()
+                if savedNotes.isEmpty {
+                    Button("No saved notes") {}
+                        .disabled(true)
+                } else {
+                    ForEach(savedNotes, id: \.self) { url in
+                        Button(url.deletingPathExtension().lastPathComponent) {
+                            store.openNote(at: url)
+                        }
+                    }
+                }
+            }
         }
 
         CommandMenu("View") {

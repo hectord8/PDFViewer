@@ -153,6 +153,9 @@ struct ContentView: View {
         if store.showWorkbookChat {
             WorkbookChatView()
                 .id("workbook-chat")
+        } else if let note = store.selectedNoteTab {
+            NoteEditorView(note: note)
+                .id(note.id)
         } else if let summary = store.selectedSummaryTab {
             SummaryView(tab: summary)
                 .id(summary.id)
@@ -165,6 +168,8 @@ struct ContentView: View {
         } else if let primary = store.selectedTab {
             if let secondary = store.secondaryTab {
                 SplitLayout(primary: primary, secondary: secondary)
+            } else if let note = store.secondaryNoteTab {
+                NoteSplitLayout(pdf: primary, note: note)
             } else {
                 PDFViewerPane(tab: primary)
                     .id(primary.id)
@@ -198,6 +203,13 @@ struct ContentView: View {
                 Image(systemName: "checklist")
             }
             .help("Tasks")
+
+            Button {
+                store.newNote()
+            } label: {
+                Image(systemName: "note.text")
+            }
+            .help("New note")
         }
 
         if let tab = store.activeTab, !store.isGeneratedTabActive {
@@ -284,6 +296,60 @@ struct ContentView: View {
             }
             .help("Ask opencode about this document")
         }
+    }
+}
+
+/// A PDF on the left and an editable note on the right, sharing the draggable
+/// split divider.
+private struct NoteSplitLayout: View {
+    @EnvironmentObject private var store: LibraryStore
+    let pdf: PDFDocumentTab
+    let note: NoteTab
+
+    private let dividerWidth: CGFloat = 8
+    private let minFraction = 0.2
+    private let maxFraction = 0.8
+
+    var body: some View {
+        GeometryReader { geo in
+            let available = max(geo.size.width - dividerWidth, 1)
+            let fraction = min(max(store.splitFraction, minFraction), maxFraction)
+            let leftWidth = max(available * fraction, 1)
+            let rightWidth = max(available - leftWidth, 1)
+
+            HStack(spacing: 0) {
+                PDFViewerPane(tab: pdf, isFocused: store.focusedPane == .primary)
+                    .frame(width: leftWidth)
+                    .id(pdf.id)
+
+                divider(available: available)
+
+                NoteEditorView(note: note)
+                    .frame(width: rightWidth)
+                    .id(note.id)
+            }
+            .coordinateSpace(name: "split")
+        }
+    }
+
+    private func divider(available: CGFloat) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 1)
+        }
+        .frame(width: dividerWidth)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("split"))
+                .onChanged { value in
+                    let proposed = Double(value.location.x / available)
+                    store.splitFraction = min(max(proposed, minFraction), maxFraction)
+                }
+                .onEnded { _ in
+                    store.commitSplitLayout()
+                }
+        )
     }
 }
 

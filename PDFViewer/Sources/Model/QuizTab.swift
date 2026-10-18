@@ -1,10 +1,31 @@
 import Foundation
 
+enum QuizQuestionKind: String, Codable {
+    case open
+    case multipleChoice
+}
+
 struct QuizQuestion: Identifiable {
     let id = UUID()
     let prompt: String
     let answer: String
     let marks: Int
+    let kind: QuizQuestionKind
+    let options: [String]
+
+    init(prompt: String, answer: String, marks: Int, kind: QuizQuestionKind = .open, options: [String] = []) {
+        self.prompt = prompt
+        self.answer = answer
+        self.marks = marks
+        self.kind = kind
+        self.options = options
+    }
+
+    /// Index of the correct option (multiple-choice), matched from `answer`.
+    var correctOptionIndex: Int? {
+        guard kind == .multipleChoice else { return nil }
+        return options.firstIndex { $0.caseInsensitiveCompare(answer.trimmingCharacters(in: .whitespaces)) == .orderedSame }
+    }
 }
 
 struct QuizResult {

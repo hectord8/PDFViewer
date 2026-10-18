@@ -54,6 +54,10 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var summaries: [SummaryTab] = []
     @Published var selectedSummaryID: UUID?
 
+    @Published private(set) var notes: [NoteTab] = []
+    @Published var selectedNoteID: UUID?
+    @Published var secondaryNoteID: UUID?
+
     @Published private var findBarTabID: UUID?
 
     private var didRestoreSession = false
@@ -69,7 +73,7 @@ final class LibraryStore: ObservableObject {
         return tabs.first { $0.id == secondaryTabID }
     }
 
-    var isSplit: Bool { secondaryTab != nil }
+    var isSplit: Bool { secondaryTab != nil || secondaryNoteTab != nil }
 
     var selectedQuizTab: QuizTab? {
         guard let selectedQuizID else { return nil }
@@ -86,10 +90,21 @@ final class LibraryStore: ObservableObject {
         return summaries.first { $0.id == selectedSummaryID }
     }
 
+    var selectedNoteTab: NoteTab? {
+        guard let selectedNoteID else { return nil }
+        return notes.first { $0.id == selectedNoteID }
+    }
+
+    var secondaryNoteTab: NoteTab? {
+        guard let secondaryNoteID else { return nil }
+        return notes.first { $0.id == secondaryNoteID }
+    }
+
     var isQuizActive: Bool { selectedQuizTab != nil }
     var isFlashcardActive: Bool { selectedFlashcardTab != nil }
     var isSummaryActive: Bool { selectedSummaryTab != nil }
-    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive || isSummaryActive }
+    var isNoteActive: Bool { selectedNoteTab != nil && secondaryNoteTab == nil }
+    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive || isSummaryActive || isNoteActive }
 
     var activeTab: PDFDocumentTab? {
         if isSplit, focusedPane == .secondary, let secondaryTab { return secondaryTab }
@@ -218,6 +233,7 @@ final class LibraryStore: ObservableObject {
         selectedQuizID = nil
         selectedFlashcardID = nil
         selectedSummaryID = nil
+        selectedNoteID = nil
         if isSplit {
             if tab.id == selectedTabID {
                 focusedPane = .primary
@@ -358,6 +374,63 @@ final class LibraryStore: ObservableObject {
         matches.forEach { closeSummary($0) }
     }
 
+    // MARK: - Notes
+
+    @discardableResult
+    func newNote() -> NoteTab {
+        let note = NoteTab(title: "Untitled Note", text: NotesStore.emptyText(), fileURL: nil)
+        notes.append(note)
+        selectNote(note)
+        return note
+    }
+
+    func openNote(at url: URL) {
+        if let existing = notes.first(where: { $0.fileURL?.path == url.path }) {
+            selectNote(existing)
+            return
+        }
+        guard let loaded = NotesStore.load(url) else {
+            errorMessage = "“\(url.lastPathComponent)” could not be opened."
+            return
+        }
+        let note = NoteTab(title: loaded.title, text: loaded.text, fileURL: url)
+        notes.append(note)
+        selectNote(note)
+    }
+
+    func selectNote(_ note: NoteTab) {
+        if secondaryTabID != nil {
+            secondaryTabID = nil
+            focusedPane = .primary
+        }
+        secondaryNoteID = nil
+        selectedQuizID = nil
+        selectedFlashcardID = nil
+        selectedSummaryID = nil
+        selectedNoteID = note.id
+    }
+
+    func closeNote(_ note: NoteTab) {
+        note.saveNow()
+        notes.removeAll { $0.id == note.id }
+        if selectedNoteID == note.id {
+            selectedNoteID = nil
+        }
+        if secondaryNoteID == note.id {
+            secondaryNoteID = nil
+        }
+    }
+
+    /// Shows this note beside the currently-selected PDF.
+    func splitNoteWithPDF(_ note: NoteTab) {
+        guard let pdf = selectedTab else { return }
+        secondaryTabID = nil
+        selectedTabID = pdf.id
+        selectedNoteID = nil
+        secondaryNoteID = note.id
+        focusedPane = .secondary
+    }
+
     private func collapseSplitForGeneratedTab() {
         if isSplit {
             secondaryTabID = nil
@@ -384,8 +457,9 @@ final class LibraryStore: ObservableObject {
     }
 
     func collapseSplit() {
-        guard secondaryTabID != nil else { return }
+        guard secondaryTabID != nil || secondaryNoteID != nil else { return }
         secondaryTabID = nil
+        secondaryNoteID = nil
         focusedPane = .primary
         scheduleSessionSave()
     }

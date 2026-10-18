@@ -551,46 +551,68 @@ final class AgentChatModel: ObservableObject {
         guard !quiz.isMarking else { return }
         let pending = quiz.pending
         guard !pending.isEmpty else { return }
-        guard let client else {
-            log("Can’t mark — not connected to opencode.")
-            return
-        }
 
         quiz.isMarking = true
         defer { quiz.isMarking = false }
         log("Marking \(pending.count) answer\(pending.count == 1 ? "" : "s") in “\(quiz.title)”…")
 
-        do {
-            let session = try await ensureSession(client: client)
-            let request = Self.quizGradingRequest(quiz: quiz, pending: pending)
-            let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+        var results = quiz.results
+        var written: [(index: Int, question: QuizQuestion)] = []
 
-            guard let graded = Self.parseGrading(reply) else {
-                log("Couldn’t read the marking result — try again.")
-                return
+        // Multiple-choice questions are graded instantly and locally.
+        for entry in pending {
+            guard entry.question.kind == .multipleChoice else {
+                written.append(entry)
+                continue
             }
-
-            var results = quiz.results
-            for entry in graded {
-                guard let match = pending.first(where: { $0.index == entry.index }) else { continue }
-                let proposed = entry.awarded ?? (entry.correct ? match.question.marks : 0)
-                let awarded = min(max(proposed, 0), match.question.marks)
-                results.removeAll { $0.questionID == match.question.id }
-                results.append(
-                    QuizResult(
-                        questionID: match.question.id,
-                        correct: entry.correct,
-                        awarded: awarded,
-                        feedback: entry.feedback
-                    )
+            let selected = quiz.answers.indices.contains(entry.index - 1) ? quiz.answers[entry.index - 1] : ""
+            let correct = Int(selected) == entry.question.correctOptionIndex
+            results.removeAll { $0.questionID == entry.question.id }
+            results.append(
+                QuizResult(
+                    questionID: entry.question.id,
+                    correct: correct,
+                    awarded: correct ? entry.question.marks : 0,
+                    feedback: correct ? "" : "Correct answer: \(entry.question.answer)"
                 )
-            }
-            quiz.results = results
-            quiz.marked = !results.isEmpty
-            log("Marked \(graded.count) answer\(graded.count == 1 ? "" : "s").")
-        } catch {
-            log("Marking failed — \(Self.describe(error))")
+            )
         }
+
+        if !written.isEmpty {
+            if let client {
+                do {
+                    let session = try await ensureSession(client: client)
+                    let request = Self.quizGradingRequest(quiz: quiz, pending: written)
+                    let reply = try await client.sendMessage(sessionID: session, text: request, model: parsedModel)
+                    if let graded = Self.parseGrading(reply) {
+                        for entry in graded {
+                            guard let match = written.first(where: { $0.index == entry.index }) else { continue }
+                            let proposed = entry.awarded ?? (entry.correct ? match.question.marks : 0)
+                            let awarded = min(max(proposed, 0), match.question.marks)
+                            results.removeAll { $0.questionID == match.question.id }
+                            results.append(
+                                QuizResult(
+                                    questionID: match.question.id,
+                                    correct: entry.correct,
+                                    awarded: awarded,
+                                    feedback: entry.feedback
+                                )
+                            )
+                        }
+                    } else {
+                        log("Couldn’t read the marking result — try again.")
+                    }
+                } catch {
+                    log("Marking written answers failed — \(Self.describe(error))")
+                }
+            } else {
+                log("Can’t mark written answers — not connected to opencode.")
+            }
+        }
+
+        quiz.results = results
+        quiz.marked = !results.isEmpty
+        log("Marked \(results.count) answer\(results.count == 1 ? "" : "s").")
     }
 
     private struct GradedResult {
@@ -610,6 +632,8 @@ final class AgentChatModel: ObservableObject {
             let question: String?
             let answer: String?
             let marks: Int?
+            let type: String?
+            let options: [String]?
         }
         let title: String?
         let questions: [Item]?
@@ -634,10 +658,18 @@ final class AgentChatModel: ObservableObject {
         let questions = (payload.questions ?? []).compactMap { item -> QuizQuestion? in
             guard let prompt = item.question?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !prompt.isEmpty else { return nil }
+
+            let options = (item.options ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let wantsMultipleChoice = item.type?.lowercased().contains("multi") == true && options.count >= 2
+
             return QuizQuestion(
                 prompt: prompt,
                 answer: item.answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-                marks: max(1, item.marks ?? 1)
+                marks: max(1, item.marks ?? 1),
+                kind: wantsMultipleChoice ? .multipleChoice : .open,
+                options: wantsMultipleChoice ? options : []
             )
         }
 
@@ -689,9 +721,9 @@ final class AgentChatModel: ObservableObject {
 
     private static func quizGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create an exam-style quiz for revising for a final exam. Ask questions in the style of a final exam — conceptual, applied and integrative — that test the concepts most likely to be assessed. Ignore notation, symbol or parameter formats, exact wording and other low-value trivia; a question that just asks for a format or definition is a waste of time. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
-        {"title": "Quiz title", "questions": [{"question": "The question text", "answer": "A concise model answer used for marking", "marks": 1}]}
-        Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
+        Create an exam-style quiz for revising for a final exam, with a mix of multiple-choice and open short-answer questions. Questions should be conceptual, applied and integrative — testing the concepts most likely to be assessed, not notation, formats or trivia. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+        {"title": "Quiz title", "questions": [{"question": "The question text", "type": "mc", "options": ["First", "Second", "Third", "Fourth"], "answer": "Second", "marks": 1}, {"question": "Another question", "type": "open", "answer": "A concise model answer used for marking", "marks": 2}]}
+        For multiple-choice questions use "type": "mc" with exactly 4 "options" and "answer" set to the exact text of the correct option. For written questions use "type": "open" with a model "answer". Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
         """
 
         if let context, !context.isEmpty {
@@ -733,6 +765,8 @@ final class AgentChatModel: ObservableObject {
             let prompt: String
             let answer: String
             let marks: Int
+            var type: String?
+            var options: [String]?
         }
         let title: String
         let questions: [Item]
@@ -748,7 +782,15 @@ final class AgentChatModel: ObservableObject {
             let fileURL = Self.uniqueFileURL(in: root, slug: Self.slug(title), ext: "json")
             let file = QuizFile(
                 title: title,
-                questions: questions.map { .init(prompt: $0.prompt, answer: $0.answer, marks: $0.marks) }
+                questions: questions.map { question in
+                    QuizFile.Item(
+                        prompt: question.prompt,
+                        answer: question.answer,
+                        marks: question.marks,
+                        type: question.kind == .multipleChoice ? "mc" : "open",
+                        options: question.options.isEmpty ? nil : question.options
+                    )
+                }
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -766,7 +808,11 @@ final class AgentChatModel: ObservableObject {
             log("Couldn’t read \(url.path)")
             return
         }
-        let questions = file.questions.map { QuizQuestion(prompt: $0.prompt, answer: $0.answer, marks: $0.marks) }
+        let questions = file.questions.map { item in
+            let options = item.options ?? []
+            let kind: QuizQuestionKind = item.type == "mc" && options.count >= 2 ? .multipleChoice : .open
+            return QuizQuestion(prompt: item.prompt, answer: item.answer, marks: item.marks, kind: kind, options: kind == .multipleChoice ? options : [])
+        }
         library.openQuiz(QuizTab(title: file.title, questions: questions, fileURL: url))
         log("Opened quiz “\(file.title)”.")
     }

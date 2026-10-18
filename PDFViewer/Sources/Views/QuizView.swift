@@ -72,20 +72,28 @@ struct QuizView: View {
                 .help("Remove this question")
             }
 
-            TextEditor(text: binding(for: index))
-                .font(.body)
-                .frame(minHeight: 70)
-                .padding(6)
-                .scrollContentBackground(.hidden)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(borderColor(result), lineWidth: 1)
-                )
-                .disabled(result != nil || tab.isMarking)
+            if question.kind == .multipleChoice {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(question.options.enumerated()), id: \.offset) { optionIndex, option in
+                        optionRow(index: index, optionIndex: optionIndex, option: option, question: question, result: result)
+                    }
+                }
+            } else {
+                TextEditor(text: binding(for: index))
+                    .font(.body)
+                    .frame(minHeight: 70)
+                    .padding(6)
+                    .scrollContentBackground(.hidden)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(borderColor(result), lineWidth: 1)
+                    )
+                    .disabled(result != nil || tab.isMarking)
+            }
 
             if let result {
                 HStack(alignment: .top, spacing: 8) {
@@ -148,6 +156,57 @@ struct QuizView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
+    }
+
+    private func optionRow(
+        index: Int,
+        optionIndex: Int,
+        option: String,
+        question: QuizQuestion,
+        result: QuizResult?
+    ) -> some View {
+        let selected = tab.answers.indices.contains(index) && tab.answers[index] == String(optionIndex)
+        let isCorrect = question.correctOptionIndex == optionIndex
+        let showResult = result != nil
+
+        let border: Color = {
+            guard showResult else { return Color.primary.opacity(0.12) }
+            if isCorrect { return Color.green.opacity(0.6) }
+            if selected { return Color.red.opacity(0.6) }
+            return Color.primary.opacity(0.12)
+        }()
+
+        return Button {
+            guard result == nil, !tab.isMarking, tab.answers.indices.contains(index) else { return }
+            tab.answers[index] = String(optionIndex)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+
+                MathOrText(markdown: option, fontSize: 14)
+
+                Spacer(minLength: 0)
+
+                if showResult && isCorrect {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(showResult || tab.isMarking)
     }
 
     private func binding(for index: Int) -> Binding<String> {
