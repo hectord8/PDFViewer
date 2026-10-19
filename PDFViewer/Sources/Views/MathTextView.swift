@@ -11,6 +11,16 @@ enum MathTextSupport {
     }
 }
 
+/// A `WKWebView` that never swallows scroll gestures: the rendered content
+/// fits its frame, so wheel/trackpad events are forwarded to the enclosing
+/// SwiftUI `ScrollView`. Without this, hovering over a maths reply (which
+/// renders in a web view) blocks scrolling of the agent transcript.
+final class PassthroughWebView: WKWebView {
+    override func scrollWheel(with event: NSEvent) {
+        nextResponder?.scrollWheel(with: event)
+    }
+}
+
 /// Renders markdown with LaTeX math (via MathJax) inside a `WKWebView` and
 /// reports its own height so it can sit in normal SwiftUI layout.
 struct MathTextView: NSViewRepresentable {
@@ -28,7 +38,7 @@ struct MathTextView: NSViewRepresentable {
         controller.add(context.coordinator, name: "height")
         configuration.userContentController = controller
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = PassthroughWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = .clear
 

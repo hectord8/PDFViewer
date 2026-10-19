@@ -5,6 +5,7 @@ enum WorkbookItemKind: String, Codable {
     case summary
     case deck
     case quiz
+    case note
     case file
 }
 

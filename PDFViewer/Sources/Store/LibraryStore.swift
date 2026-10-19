@@ -58,6 +58,8 @@ final class LibraryStore: ObservableObject {
     @Published var selectedNoteID: UUID?
     @Published var secondaryNoteID: UUID?
 
+    private let workbooks = WorkbookStore.shared
+
     @Published private var findBarTabID: UUID?
 
     private var didRestoreSession = false
@@ -379,9 +381,29 @@ final class LibraryStore: ObservableObject {
     @discardableResult
     func newNote() -> NoteTab {
         let note = NoteTab(title: "Untitled Note", text: NotesStore.emptyText(), fileURL: nil)
+        note.onFirstSave = { [weak self] note in self?.addNoteToActiveWorkbook(note) }
         notes.append(note)
         selectNote(note)
         return note
+    }
+
+    /// Adds a freshly-saved note into the active workbook (under a "Notes"
+    /// folder), the same way generated flashcards/summaries are filed.
+    private func addNoteToActiveWorkbook(_ note: NoteTab) {
+        guard let url = note.fileURL,
+              let workbookID = workbooks.activeWorkbookID,
+              let workbook = workbooks.workbooks.first(where: { $0.id == workbookID }) else {
+            return
+        }
+
+        let folderID: UUID?
+        if let existing = workbook.folders.first(where: { $0.name.caseInsensitiveCompare("Notes") == .orderedSame }) {
+            folderID = existing.id
+        } else {
+            folderID = workbooks.addFolder(named: "Notes", to: workbookID)
+        }
+
+        workbooks.add(workbooks.makeItem(kind: .note, title: note.title, url: url), to: workbookID, folderID: folderID)
     }
 
     func openNote(at url: URL) {

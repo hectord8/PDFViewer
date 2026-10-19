@@ -24,12 +24,7 @@ enum NotesStore {
     }
 
     static func load(_ url: URL) -> (title: String, text: NSAttributedString)? {
-        guard let data = try? Data(contentsOf: url),
-              let text = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.rtf],
-                documentAttributes: nil
-              ) else {
+        guard let text = try? NSMutableAttributedString(url: url, options: [:], documentAttributes: nil) else {
             return nil
         }
         return (url.deletingPathExtension().lastPathComponent, text)
@@ -39,14 +34,34 @@ enum NotesStore {
         let folder = folderURL
         let url = existing ?? uniqueURL(in: folder, slug: slug(title))
         let range = NSRange(location: 0, length: text.length)
-        guard let data = try? text.data(
+
+        // Legacy plain .rtf notes keep their format.
+        if url.pathExtension.lowercased() == "rtf" {
+            guard let data = try? text.data(
+                from: range,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+            ) else {
+                return nil
+            }
+            do {
+                try data.write(to: url, options: .atomic)
+                return url
+            } catch {
+                NSLog("PDFViewer: could not save note: \(error.localizedDescription)")
+                return nil
+            }
+        }
+
+        // .rtfd bundles can embed images (screenshots).
+        guard let wrapper = try? text.fileWrapper(
             from: range,
-            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
         ) else {
             return nil
         }
         do {
-            try data.write(to: url, options: .atomic)
+            try? FileManager.default.removeItem(at: url)
+            try wrapper.write(to: url, options: .atomic, originalContentsURL: nil)
             return url
         } catch {
             NSLog("PDFViewer: could not save note: \(error.localizedDescription)")
@@ -103,7 +118,7 @@ enum NotesStore {
         )) ?? []
 
         return entries
-            .filter { $0.pathExtension.lowercased() == "rtf" }
+            .filter { ["rtf", "rtfd"].contains($0.pathExtension.lowercased()) }
             .sorted { first, second in
                 let a = (try? first.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let b = (try? second.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -112,10 +127,10 @@ enum NotesStore {
     }
 
     private static func uniqueURL(in folder: URL, slug: String) -> URL {
-        var candidate = folder.appendingPathComponent("\(slug).rtf")
+        var candidate = folder.appendingPathComponent("\(slug).rtfd")
         var suffix = 1
         while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = folder.appendingPathComponent("\(slug) \(suffix).rtf")
+            candidate = folder.appendingPathComponent("\(slug) \(suffix).rtfd")
             suffix += 1
         }
         return candidate

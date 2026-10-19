@@ -67,6 +67,7 @@ final class LibraryNode: NSObject {
             case .summary: return "doc.plaintext"
             case .deck: return "rectangle.on.rectangle"
             case .quiz: return "checklist"
+            case .note: return "note.text"
             case .file: return "doc"
             }
         }
@@ -596,6 +597,8 @@ struct LibraryOutlineView: NSViewRepresentable {
                 Task { @MainActor in
                     AgentChatModel.shared.openSavedQuiz(at: url)
                 }
+            case .note:
+                LibraryStore.shared.openNote(at: url)
             case .file:
                 NSWorkspace.shared.open(url)
             }

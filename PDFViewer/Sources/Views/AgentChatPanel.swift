@@ -7,6 +7,10 @@ struct AgentChatPanel: View {
 
     @State private var showSettings = false
     @State private var copiedLog = false
+    @State private var isNearBottom = true
+    @State private var viewportHeight: CGFloat = 0
+    @State private var contentBottom: CGFloat = 0
+    @State private var inputFocused = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +32,27 @@ struct AgentChatPanel: View {
                 showSettings = true
             }
         }
+        .background(shortcutButtons)
+    }
+
+    /// Invisible buttons that provide Esc (stop) and ⌘⇧C (copy last reply).
+    private var shortcutButtons: some View {
+        Group {
+            Button("Stop generating") { model.stop() }
+                .keyboardShortcut(.escape, modifiers: [])
+            Button("Copy last reply") { copyLastAssistant() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    private func copyLastAssistant() {
+        guard let reply = model.messages.last(where: { $0.role == .assistant }) else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(reply.text, forType: .string)
     }
 
     // MARK: - Header
@@ -109,26 +134,96 @@ struct AgentChatPanel: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     if model.messages.isEmpty {
                         emptyState
                     }
 
                     ForEach(model.messages) { message in
-                        bubble(for: message)
-                            .id(message.id)
+                        ChatBubble(
+                            message: message,
+                            canInsertIntoNote: store.selectedNoteTab != nil || store.notes.isEmpty == false,
+                            onRegenerate: { Task { await model.regenerate() } },
+                            onDelete: { model.delete(message) },
+                            onInsertIntoNote: { insertIntoNote(message.text) }
+                        )
+                        .id(message.id)
                     }
 
                     if model.isSending {
                         thinkingRow.id("thinking")
                     }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: BottomEdgeKey.self,
+                                    value: geo.frame(in: .named("agentScroll")).maxY
+                                )
+                            }
+                        )
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.messages.count) { _, _ in scrollToEnd(proxy) }
-            .onChange(of: model.isSending) { _, _ in scrollToEnd(proxy) }
+            .coordinateSpace(name: "agentScroll")
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: ViewportKey.self, value: geo.size.height)
+                }
+            )
+            .onPreferenceChange(BottomEdgeKey.self) { value in
+                contentBottom = value
+                updateNearBottom()
+            }
+            .onPreferenceChange(ViewportKey.self) { value in
+                viewportHeight = value
+                updateNearBottom()
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !isNearBottom, !model.messages.isEmpty {
+                    Button {
+                        scrollToEnd(proxy)
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .padding(12)
+                    .transition(.opacity)
+                }
+            }
+            .onChange(of: model.messages.count) { _, _ in
+                if isNearBottom { scrollToEnd(proxy) }
+            }
+            .onChange(of: model.isSending) { _, _ in
+                if isNearBottom { scrollToEnd(proxy) }
+            }
         }
+    }
+
+    private func updateNearBottom() {
+        guard viewportHeight > 0 else { return }
+        isNearBottom = contentBottom <= viewportHeight + 40
+    }
+
+    private func insertIntoNote(_ text: String) {
+        let note: NoteTab
+        if let existing = store.selectedNoteTab {
+            note = existing
+        } else {
+            note = store.newNote()
+        }
+        let combined = NSMutableAttributedString(attributedString: note.text)
+        if combined.length > 0 {
+            combined.append(NSAttributedString(string: "\n\n"))
+        }
+        combined.append(NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13)]))
+        note.text = combined
+        note.markChanged()
     }
 
     private var emptyState: some View {
@@ -149,64 +244,6 @@ struct AgentChatPanel: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 20)
-    }
-
-    private func bubble(for message: AgentChatModel.ChatMessage) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            if message.role == .user {
-                Spacer(minLength: 40)
-            } else {
-                Image(systemName: message.role == .error ? "exclamationmark.triangle.fill" : "sparkles")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(message.role == .error ? Color.red : Color.accentColor)
-                    .frame(width: 22, height: 22)
-                    .background(
-                        Circle().fill((message.role == .error ? Color.red : Color.accentColor).opacity(0.12))
-                    )
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                if message.attachedContext != nil {
-                    Label("Context attached", systemImage: "paperclip")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                switch message.role {
-                case .assistant:
-                    MathOrMarkdown(markdown: message.text)
-                case .user:
-                    Text(message.text)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                case .error:
-                    Text(message.text)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.red)
-                }
-            }
-            .padding(message.role == .user ? 10 : 0)
-            .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
-            .background(message.role == .user ? Color.accentColor.opacity(0.16) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            if message.role != .user {
-                Spacer(minLength: 40)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-    }
-
-    private func bubbleBackground(for role: AgentChatModel.ChatMessage.Role) -> Color {
-        switch role {
-        case .user:
-            return Color.accentColor.opacity(0.16)
-        case .assistant:
-            return Color(nsColor: .controlBackgroundColor)
-        case .error:
-            return Color.red.opacity(0.12)
-        }
     }
 
     private var thinkingRow: some View {
@@ -313,34 +350,10 @@ struct AgentChatPanel: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 6) {
-            Menu {
-                ForEach(AgentChatModel.ContextScope.allCases) { scope in
-                    Button {
-                        model.contextScope = scope
-                    } label: {
-                        Label(scope.label, systemImage: contextSymbol(scope))
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: contextSymbol(model.contextScope))
-                        .font(.system(size: 11))
-                    Text(contextShortLabel(model.contextScope))
-                        .font(.system(size: 11, weight: .medium))
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 7, weight: .semibold))
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.primary.opacity(0.06)))
+        VStack(alignment: .leading, spacing: 8) {
+            if !model.attachments.isEmpty {
+                attachmentChips
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Context: \(model.contextScope.label)")
-            .padding(.bottom, 1)
 
             ZStack(alignment: .topLeading) {
                 CommandLineField(
@@ -348,7 +361,8 @@ struct AgentChatPanel: View {
                     onSubmit: { send() },
                     onPrevious: { model.recallPrevious() },
                     onNext: { model.recallNext() },
-                    onEdited: { model.resetHistoryCursor() }
+                    onEdited: { model.resetHistoryCursor() },
+                    onFocusChange: { inputFocused = $0 }
                 )
 
                 if model.input.isEmpty {
@@ -361,27 +375,150 @@ struct AgentChatPanel: View {
                 }
             }
 
-            Button {
-                send()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 22))
+            HStack(spacing: 8) {
+                Button {
+                    let urls = pickFiles()
+                    if !urls.isEmpty { model.addAttachments(from: urls) }
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 13))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Attach files")
+
+                contextChip
+
+                Spacer(minLength: 4)
+
+                if !model.modelLabel.isEmpty {
+                    Text(model.modelLabel)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                sendButton
             }
-            .buttonStyle(.plain)
-            .disabled(!model.canSend)
-            .padding(.bottom, 1)
-            .help("Send")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    inputFocused ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.10),
+                    lineWidth: inputFocused ? 1.5 : 1
+                )
         )
+        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+        .animation(.easeInOut(duration: 0.12), value: inputFocused)
+    }
+
+    private var contextChip: some View {
+        Menu {
+            ForEach(AgentChatModel.ContextScope.allCases) { scope in
+                Button {
+                    model.contextScope = scope
+                } label: {
+                    Label(scope.label, systemImage: contextSymbol(scope))
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: contextSymbol(model.contextScope))
+                    .font(.system(size: 11))
+                Text(contextShortLabel(model.contextScope))
+                    .font(.system(size: 11, weight: .medium))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Context: \(model.contextScope.label)")
+    }
+
+    private var sendButton: some View {
+        Button {
+            if model.isSending {
+                model.stop()
+            } else {
+                send()
+            }
+        } label: {
+            Image(systemName: model.isSending ? "stop.fill" : "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle().fill((model.isSending || model.canSend) ? Color.accentColor : Color.secondary.opacity(0.35))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.isSending && !model.canSend)
+        .help(model.isSending ? "Stop" : "Send")
+    }
+
+    private var attachmentChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(model.attachments) { attachment in
+                    HStack(spacing: 5) {
+                        Image(systemName: attachmentSymbol(attachment.kind))
+                            .font(.system(size: 10))
+                        Text(attachment.name)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(byteString(attachment.size))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Button {
+                            model.removeAttachment(attachment)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                }
+            }
+        }
+    }
+
+    private func pickFiles() -> [URL] {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        return panel.runModal() == .OK ? panel.urls : []
+    }
+
+    private func attachmentSymbol(_ kind: AgentChatModel.Attachment.Kind) -> String {
+        switch kind {
+        case .pdf: return "doc.text"
+        case .text: return "doc.plaintext"
+        case .image: return "photo"
+        case .other: return "doc"
+        }
+    }
+
+    private func byteString(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     private func contextSymbol(_ scope: AgentChatModel.ContextScope) -> String {
@@ -508,6 +645,117 @@ struct AgentChatPanel: View {
     }
 }
 
+private struct BottomEdgeKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct ViewportKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// A single message with hover actions (copy, regenerate, insert into note,
+/// delete) and selectable text.
+private struct ChatBubble: View {
+    let message: AgentChatModel.ChatMessage
+    var canInsertIntoNote: Bool
+    var onRegenerate: () -> Void
+    var onDelete: () -> Void
+    var onInsertIntoNote: () -> Void
+
+    @State private var hovering = false
+    @State private var copied = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if message.role == .user {
+                Spacer(minLength: 40)
+            } else {
+                Image(systemName: message.role == .error ? "exclamationmark.triangle.fill" : "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(message.role == .error ? Color.red : Color.accentColor)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        Circle().fill((message.role == .error ? Color.red : Color.accentColor).opacity(0.12))
+                    )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                if message.attachedContext != nil {
+                    Label("Context attached", systemImage: "paperclip")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                switch message.role {
+                case .assistant:
+                    MathOrMarkdown(markdown: message.text)
+                case .user:
+                    Text(message.text)
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
+                case .error:
+                    Text(message.text)
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
+                        .foregroundStyle(.red)
+                }
+
+                if hovering || copied {
+                    actionRow
+                }
+            }
+            .padding(message.role == .user ? 10 : 0)
+            .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
+            .background(message.role == .user ? Color.accentColor.opacity(0.14) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if message.role != .user {
+                Spacer(minLength: 40)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .onHover { hovering = $0 }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 12) {
+            action(copied ? "checkmark" : "doc.on.doc", copied ? "Copied" : "Copy", copy)
+
+            if message.role == .assistant {
+                action("arrow.clockwise", "Regenerate", onRegenerate)
+                if canInsertIntoNote {
+                    action("note.text", "Insert into note", onInsertIntoNote)
+                }
+            }
+
+            action("trash", "Delete", onDelete)
+        }
+        .transition(.opacity)
+    }
+
+    private func action(_ symbol: String, _ help: String, _ perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Image(systemName: symbol)
+                .font(.system(size: 11))
+                .frame(width: 18, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(help)
+    }
+
+    private func copy() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(message.text, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+    }
+}
+
 /// A command-line style text field: Return submits, Shift+Return inserts a
 /// newline, and the up/down arrows recall previous inputs.
 struct CommandLineField: NSViewRepresentable {
@@ -516,6 +764,7 @@ struct CommandLineField: NSViewRepresentable {
     var onPrevious: () -> Void
     var onNext: () -> Void
     var onEdited: () -> Void
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -576,6 +825,14 @@ struct CommandLineField: NSViewRepresentable {
             guard let textView = notification.object as? CommandLineTextView else { return }
             parent.text = textView.string
             parent.onEdited()
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            parent.onFocusChange(true)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.onFocusChange(false)
         }
     }
 }
@@ -653,8 +910,8 @@ struct MarkdownText: View {
                         .lineSpacing(2)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                case .code(let code):
-                    CodeBlock(code: code)
+                case .code(let code, let language):
+                    CodeBlock(code: code, language: language)
                 }
             }
         }
@@ -671,13 +928,44 @@ struct MarkdownText: View {
 
 private struct CodeBlock: View {
     let code: String
+    let language: String?
+
+    @State private var copied = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(code)
-                .font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(10)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text((language ?? "code").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(code, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Copy code")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(10)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -693,12 +981,13 @@ private struct CodeBlock: View {
 
 private enum MarkdownBlock {
     case prose(String)
-    case code(String)
+    case code(String, language: String?)
 
     static func parse(_ text: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
         var prose: [Substring] = []
         var code: [Substring] = []
+        var language: String?
         var inCode = false
 
         func flushProse() {
@@ -711,9 +1000,10 @@ private enum MarkdownBlock {
 
         func flushCode() {
             if !code.isEmpty {
-                blocks.append(.code(code.joined(separator: "\n")))
+                blocks.append(.code(code.joined(separator: "\n"), language: language))
             }
             code.removeAll()
+            language = nil
         }
 
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -724,6 +1014,9 @@ private enum MarkdownBlock {
                 } else {
                     flushProse()
                     inCode = true
+                    let tag = line.trimmingCharacters(in: .whitespaces).dropFirst(3)
+                        .trimmingCharacters(in: .whitespaces)
+                    language = tag.isEmpty ? nil : tag
                 }
                 continue
             }

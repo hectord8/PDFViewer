@@ -67,6 +67,18 @@ final class AgentChatModel: ObservableObject {
     }
 
     @Published var messages: [ChatMessage] = []
+    struct Attachment: Identifiable, Equatable {
+        enum Kind { case pdf, text, image, other }
+        let id = UUID()
+        let name: String
+        let kind: Kind
+        let size: Int
+        var text: String?
+    }
+
+    @Published var attachments: [Attachment] = []
+    private var lastPrompt: String?
+
     @Published var input: String = ""
     @Published var contextScope: ContextScope = .wholeDocument {
         didSet { UserDefaults.standard.set(contextScope.rawValue, forKey: Self.scopeKey) }
@@ -154,6 +166,13 @@ final class AgentChatModel: ObservableObject {
 
     private static var defaultQuizFolder: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/PDFViewer/Quizzes")
+    }
+
+    /// Short model name for the composer label (the part after the provider).
+    var modelLabel: String {
+        let value = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let slash = value.lastIndex(of: "/") else { return value }
+        return String(value[value.index(after: slash)...])
     }
 
     var canSend: Bool {
@@ -344,7 +363,9 @@ final class AgentChatModel: ObservableObject {
         isSending = true
         defer { isSending = false }
 
-        let attached = context
+        lastPrompt = prompt
+        let attached = Self.merged(context: context, attachments: attachmentContext())
+        attachments.removeAll()
         messages.append(ChatMessage(role: .user, text: prompt, attachedContext: attached))
 
         if Self.looksLikeFlashcards(prompt) {
@@ -406,7 +427,88 @@ final class AgentChatModel: ObservableObject {
     func newChat() {
         sessionID = nil
         sentContextHash = nil
+        lastPrompt = nil
+        attachments.removeAll()
         messages.removeAll()
+    }
+
+    // MARK: - Quick actions & attachments
+
+    func stop() {
+        if let sessionID, let client {
+            Task { await client.abort(sessionID: sessionID) }
+        }
+        if isSending { isSending = false }
+        log("Stopped.")
+    }
+
+    func delete(_ message: ChatMessage) {
+        messages.removeAll { $0.id == message.id }
+    }
+
+    /// Re-runs the last prompt (dropping the previous reply).
+    func regenerate() async {
+        guard let prompt = lastPrompt, let client, !isSending else { return }
+        while let last = messages.last, last.role != .user {
+            messages.removeLast()
+        }
+        isSending = true
+        defer { isSending = false }
+        do {
+            let session = try await ensureSession(client: client)
+            let reply = try await client.sendMessage(sessionID: session, text: prompt, model: parsedModel)
+            messages.append(
+                ChatMessage(
+                    role: .assistant,
+                    text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                    attachedContext: nil
+                )
+            )
+        } catch {
+            messages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
+        }
+    }
+
+    func addAttachments(from urls: [URL]) {
+        for url in urls {
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            let ext = url.pathExtension.lowercased()
+
+            if ext == "pdf", let document = PDFDocument(url: url) {
+                var text = ""
+                for index in 0..<document.pageCount {
+                    if let pageText = document.page(at: index)?.string { text += pageText + "\n" }
+                }
+                attachments.append(Attachment(name: url.lastPathComponent, kind: .pdf, size: size, text: text))
+            } else if let text = try? String(contentsOf: url, encoding: .utf8) {
+                attachments.append(Attachment(name: url.lastPathComponent, kind: .text, size: size, text: text))
+            } else if NSImage(contentsOf: url) != nil {
+                attachments.append(Attachment(name: url.lastPathComponent, kind: .image, size: size, text: nil))
+            } else {
+                attachments.append(Attachment(name: url.lastPathComponent, kind: .other, size: size, text: nil))
+            }
+        }
+    }
+
+    func removeAttachment(_ attachment: Attachment) {
+        attachments.removeAll { $0.id == attachment.id }
+    }
+
+    private func attachmentContext() -> String? {
+        let parts = attachments.compactMap { attachment -> String? in
+            guard let text = attachment.text else { return nil }
+            return "[Attached file: \(attachment.name)]\n\(String(text.prefix(20_000)))"
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
+    private static func merged(context: String?, attachments: String?) -> String? {
+        switch (context, attachments) {
+        case let (context?, attachments?): return context + "\n\n" + attachments
+        case let (context?, nil): return context
+        case let (nil, attachments?): return attachments
+        case (nil, nil): return nil
+        }
     }
 
     // MARK: - Workbook assistant (main chat)
@@ -1431,7 +1533,7 @@ final class AgentChatModel: ObservableObject {
 
     private static func pageNotesRequest(document: String, context: String) -> String {
         """
-        The reader wants notes beside each page of a PDF so they can go deeper on that page's topic. For every page in the material below, write a short set of notes: first summarise the page's key idea in a sentence, then expand on it with the helpful context, a definition or example, and why it matters. Keep each page to a few tight bullets and skip notation and trivia.
+        The reader has already read each page of this PDF, so your notes must ADD to it, never repeat it. Do not restate the slide's text. For every page below, supply only what isn't already spelled out: if a concept is introduced without a formal definition, provide a concise definition; explain the underlying why and intuition; give a concrete example or analogy; connect it to related ideas; note common pitfalls or misconceptions; and say why it matters or where it's used. Keep each page to a few tight bullets, and if a page genuinely has nothing to add (for example a title or agenda slide) write just "—".
 
         Write any mathematics as LaTeX (inline $...$, display $$...$$). Use Markdown with one section per page, each introduced by a heading in exactly the form "## Page N" where N is that page's number, followed by that page's notes and nothing else.
 
@@ -1727,6 +1829,7 @@ final class AgentChatModel: ObservableObject {
         case .summary: folderName = "Summaries"
         case .deck: folderName = "Flashcards"
         case .quiz: folderName = "Quizzes"
+        case .note: folderName = "Notes"
         case .file: folderName = "Files"
         }
 
@@ -1911,7 +2014,7 @@ final class AgentChatModel: ObservableObject {
                           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     chunks.append(WorkbookChunk(title: item.title, page: index + 1, path: item.path, text: text, termCounts: tokenize(text)))
                 }
-            case .deck, .quiz, .file:
+            case .deck, .quiz, .note, .file:
                 continue
             }
         }

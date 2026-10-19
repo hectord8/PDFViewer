@@ -88,6 +88,112 @@ struct NoteEditorView: View {
     }
 }
 
+/// An NSTextView that handles the standard rich-text shortcuts (⌘B, ⌘I, ⌘U)
+/// and uses Tab/Shift-Tab to indent rather than inserting a tab character.
+final class NoteTextView: NSTextView {
+    var onToggleBold: (() -> Void)?
+    var onToggleItalic: (() -> Void)?
+    var onToggleUnderline: (() -> Void)?
+    var onIndent: (() -> Void)?
+    var onOutdent: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 48 { // Tab
+            if event.modifierFlags.contains(.shift) {
+                onOutdent?()
+            } else {
+                onIndent?()
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    // MARK: - Images (screenshots) dropped or pasted in
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        image(from: sender) != nil ? .copy : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        image(from: sender) != nil ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let image = image(from: sender) else {
+            return super.performDragOperation(sender)
+        }
+        let point = convert(sender.draggingLocation, from: nil)
+        insertImage(image, at: characterIndexForInsertion(at: point))
+        return true
+    }
+
+    override func paste(_ sender: Any?) {
+        if let image = image(from: NSPasteboard.general) {
+            insertImage(image, at: selectedRange().location)
+            return
+        }
+        super.paste(sender)
+    }
+
+    private func image(from sender: NSDraggingInfo) -> NSImage? {
+        image(from: sender.draggingPasteboard)
+    }
+
+    private func image(from pasteboard: NSPasteboard) -> NSImage? {
+        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let first = images.first {
+            return first
+        }
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], let image = urls.first.flatMap({ NSImage(contentsOf: $0) }) {
+            return image
+        }
+        return nil
+    }
+
+    private func insertImage(_ image: NSImage, at index: Int) {
+        let maxWidth: CGFloat = 420
+        var size = image.size
+        if size.width > maxWidth, size.width > 0 {
+            size = NSSize(width: maxWidth, height: size.height * maxWidth / size.width)
+        }
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(origin: .zero, size: size)
+
+        guard let storage = textStorage else { return }
+        let location = min(max(index, 0), storage.length)
+        storage.replaceCharacters(in: NSRange(location: location, length: 0), with: NSAttributedString(attachment: attachment))
+        didChangeText()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              !event.modifierFlags.contains(.option),
+              !event.modifierFlags.contains(.control) else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "b":
+            onToggleBold?()
+            return true
+        case "i":
+            onToggleItalic?()
+            return true
+        case "u":
+            onToggleUnderline?()
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+}
+
 /// A word-processor style editor: a formatting bar over a rich NSTextView.
 struct RichTextEditorView: NSViewRepresentable {
     @Binding var text: NSAttributedString
@@ -100,7 +206,13 @@ struct RichTextEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
 
-        let textView = NSTextView()
+        let textView = NoteTextView()
+        textView.onToggleBold = { [weak coordinator = context.coordinator] in coordinator?.applyBold() }
+        textView.onToggleItalic = { [weak coordinator = context.coordinator] in coordinator?.applyItalic() }
+        textView.onToggleUnderline = { [weak coordinator = context.coordinator] in coordinator?.applyUnderline() }
+        textView.onIndent = { [weak coordinator = context.coordinator] in coordinator?.indent(by: 22) }
+        textView.onOutdent = { [weak coordinator = context.coordinator] in coordinator?.indent(by: -22) }
+        textView.registerForDraggedTypes([.tiff, .png, .fileURL])
         textView.isRichText = true
         textView.allowsUndo = true
         textView.delegate = context.coordinator
@@ -308,7 +420,11 @@ struct RichTextEditorView: NSViewRepresentable {
             notifyChange()
         }
 
-        @objc private func toggleBold() {
+        @objc private func toggleBold() { applyBold() }
+        @objc private func toggleItalic() { applyItalic() }
+        @objc private func toggleUnderline() { applyUnderline() }
+
+        func applyBold() {
             applyFont { font in
                 let traits = NSFontManager.shared.traits(of: font)
                 return traits.contains(.boldFontMask)
@@ -317,7 +433,7 @@ struct RichTextEditorView: NSViewRepresentable {
             }
         }
 
-        @objc private func toggleItalic() {
+        func applyItalic() {
             applyFont { font in
                 let traits = NSFontManager.shared.traits(of: font)
                 return traits.contains(.italicFontMask)
@@ -326,12 +442,48 @@ struct RichTextEditorView: NSViewRepresentable {
             }
         }
 
-        @objc private func toggleUnderline() {
+        func applyUnderline() {
             guard let textView, let storage = textView.textStorage else { return }
             let range = textView.selectedRange()
             guard range.length > 0 else { return }
             let current = storage.attribute(.underlineStyle, at: range.location, effectiveRange: nil) as? Int ?? 0
             storage.addAttribute(.underlineStyle, value: current == 0 ? NSUnderlineStyle.single.rawValue : 0, range: range)
+            notifyChange()
+        }
+
+        /// Indents (or outdents) the selected paragraphs instead of inserting a
+        /// tab character, which keeps the layout stable. Outdenting also removes
+        /// a leading tab, so notes that used real tabs can be brought back left.
+        func indent(by delta: CGFloat) {
+            guard let textView, let storage = textView.textStorage else { return }
+
+            if delta < 0, removeLeadingTab(storage: storage) {
+                notifyChange()
+                return
+            }
+
+            let paragraphRange = (storage.string as NSString).paragraphRange(for: textView.selectedRange())
+
+            storage.beginEditing()
+            storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subRange, _ in
+                let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                style.firstLineHeadIndent = max(0, style.firstLineHeadIndent + delta)
+                style.headIndent = max(0, style.headIndent + delta)
+                if !style.textLists.isEmpty {
+                    style.tabStops = [NSTextTab(textAlignment: .left, location: style.headIndent)]
+                }
+                storage.addAttribute(.paragraphStyle, value: style, range: subRange)
+            }
+            storage.endEditing()
+
+            if storage.length > 0 {
+                let location = min(textView.selectedRange().location, storage.length - 1)
+                if let style = storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle {
+                    var attributes = textView.typingAttributes
+                    attributes[.paragraphStyle] = style
+                    textView.typingAttributes = attributes
+                }
+            }
             notifyChange()
         }
 
@@ -343,6 +495,19 @@ struct RichTextEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             convertMarkdownListIfNeeded()
             notifyChange()
+        }
+
+        /// Removes one leading tab character from the paragraph at the caret.
+        private func removeLeadingTab(storage: NSTextStorage) -> Bool {
+            guard let textView else { return false }
+            let ns = storage.string as NSString
+            let paragraph = ns.paragraphRange(for: NSRange(location: textView.selectedRange().location, length: 0))
+            guard paragraph.length > 0,
+                  ns.substring(with: NSRange(location: paragraph.location, length: 1)) == "\t" else {
+                return false
+            }
+            storage.replaceCharacters(in: NSRange(location: paragraph.location, length: 1), with: "")
+            return true
         }
 
         /// Turns "- ", "* ", "+ " into a bullet list and "1. " into a numbered
@@ -387,7 +552,7 @@ struct RichTextEditorView: NSViewRepresentable {
                 storage.addAttribute(.paragraphStyle, value: style, range: newRange)
             }
             storage.endEditing()
-            textView.typingAttributes = [.font: font, .paragraphStyle: style]
+            textView.typingAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: NSColor.textColor]
         }
 
         private func notifyChange() {

@@ -9,6 +9,9 @@ final class NoteTab: ObservableObject, Identifiable {
     @Published var fileURL: URL?
     @Published var isDirty = false
 
+    /// Called the first time the note is written to disk.
+    var onFirstSave: ((NoteTab) -> Void)?
+
     private var saveWork: DispatchWorkItem?
 
     init(title: String, text: NSAttributedString, fileURL: URL?) {
@@ -29,8 +32,12 @@ final class NoteTab: ObservableObject, Identifiable {
     func saveNow() {
         saveWork?.cancel()
         saveWork = nil
+        let wasUnsaved = fileURL == nil
         guard let url = NotesStore.save(text, title: title, to: fileURL) else { return }
         fileURL = url
         isDirty = false
+        if wasUnsaved {
+            onFirstSave?(self)
+        }
     }
 }

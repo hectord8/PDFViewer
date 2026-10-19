@@ -106,6 +106,18 @@ struct WorkbookTabBar: View {
                 ))
             case .file:
                 return
+            case .note:
+                guard let note = store.notes.first(where: { $0.fileURL?.path == item.path }) else { return }
+                result.append(Entry(
+                    item: item,
+                    folder: folder,
+                    isActive: store.selectedNoteID == note.id,
+                    select: { store.selectNote(note) },
+                    close: { store.closeNote(note) },
+                    split: nil,
+                    reload: nil,
+                    duplicate: nil
+                ))
             case .quiz:
                 guard let quiz = store.quizzes.first(where: { $0.fileURL?.path == item.path }) else { return }
                 result.append(Entry(
@@ -240,6 +252,7 @@ struct WorkbookTabBar: View {
         case .summary: return "doc.plaintext"
         case .deck: return "rectangle.on.rectangle"
         case .quiz: return "checklist"
+        case .note: return "note.text"
         case .file: return "doc"
         }
     }
