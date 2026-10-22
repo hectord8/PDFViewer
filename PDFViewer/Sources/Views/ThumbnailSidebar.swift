@@ -1,5 +1,5 @@
-import SwiftUI
 import PDFKit
+import SwiftUI
 
 struct ThumbnailSidebar: NSViewRepresentable {
     @ObservedObject var tab: PDFDocumentTab

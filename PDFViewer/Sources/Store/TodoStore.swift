@@ -64,7 +64,8 @@ final class TodoStore: ObservableObject {
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([TodoItem].self, from: data) else {
+            let decoded = try? JSONDecoder().decode([TodoItem].self, from: data)
+        else {
             return
         }
         items = decoded

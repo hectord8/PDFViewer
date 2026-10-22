@@ -75,7 +75,8 @@ struct QuizView: View {
             if question.kind == .multipleChoice {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(question.options.enumerated()), id: \.offset) { optionIndex, option in
-                        optionRow(index: index, optionIndex: optionIndex, option: option, question: question, result: result)
+                        optionRow(
+                            index: index, optionIndex: optionIndex, option: option, question: question, result: result)
                     }
                 }
             } else {

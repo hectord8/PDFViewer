@@ -4,9 +4,11 @@ import Foundation
 /// Reads and writes rich-text notes as `.rtf` in ~/Documents/PDFViewer/Notes.
 enum NotesStore {
     static var folderURL: URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let documents =
+            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        let folder = documents
+        let folder =
+            documents
             .appendingPathComponent("PDFViewer", isDirectory: true)
             .appendingPathComponent("Notes", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -18,7 +20,7 @@ enum NotesStore {
             string: "",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.textColor
+                .foregroundColor: NSColor.textColor,
             ]
         )
     }
@@ -37,10 +39,12 @@ enum NotesStore {
 
         // Legacy plain .rtf notes keep their format.
         if url.pathExtension.lowercased() == "rtf" {
-            guard let data = try? text.data(
-                from: range,
-                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
-            ) else {
+            guard
+                let data = try? text.data(
+                    from: range,
+                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                )
+            else {
                 return nil
             }
             do {
@@ -53,10 +57,12 @@ enum NotesStore {
         }
 
         // .rtfd bundles can embed images (screenshots).
-        guard let wrapper = try? text.fileWrapper(
-            from: range,
-            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
-        ) else {
+        guard
+            let wrapper = try? text.fileWrapper(
+                from: range,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            )
+        else {
             return nil
         }
         do {
@@ -71,10 +77,12 @@ enum NotesStore {
 
     static func writeDocx(_ text: NSAttributedString, to url: URL) -> Bool {
         let range = NSRange(location: 0, length: text.length)
-        guard let data = try? text.data(
-            from: range,
-            documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML]
-        ) else {
+        guard
+            let data = try? text.data(
+                from: range,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML]
+            )
+        else {
             return false
         }
         do {
@@ -111,17 +119,23 @@ enum NotesStore {
     }
 
     static func list() -> [URL] {
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: folderURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
+        let entries =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folderURL,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
 
-        return entries
+        return
+            entries
             .filter { ["rtf", "rtfd"].contains($0.pathExtension.lowercased()) }
             .sorted { first, second in
-                let a = (try? first.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let b = (try? second.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let a =
+                    (try? first.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
+                let b =
+                    (try? second.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                    ?? .distantPast
                 return a > b
             }
     }

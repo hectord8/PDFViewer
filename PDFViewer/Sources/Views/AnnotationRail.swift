@@ -32,7 +32,7 @@ final class PageGeometry: ObservableObject {
                 object: scrollView.contentView,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in self?.scheduleRefresh() }
+                Task { @MainActor [weak self] in self?.scheduleRefresh() }
             }
         }
 
@@ -41,7 +41,7 @@ final class PageGeometry: ObservableObject {
             object: pdfView,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.scheduleRefresh() }
+            Task { @MainActor [weak self] in self?.scheduleRefresh() }
         }
 
         refresh()

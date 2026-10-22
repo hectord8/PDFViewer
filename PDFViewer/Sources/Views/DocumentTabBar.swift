@@ -9,7 +9,8 @@ struct DocumentTabBar: View {
     /// tab strip, not the main tab row.
     private var workbookPaths: Set<String> {
         guard let id = workbooks.activeWorkbookID,
-              let workbook = workbooks.workbooks.first(where: { $0.id == id }) else {
+            let workbook = workbooks.workbooks.first(where: { $0.id == id })
+        else {
             return []
         }
         var paths = Set(workbook.items.map(\.path))
@@ -120,7 +121,8 @@ struct DocumentTabBar: View {
                                         }
                                         Divider()
                                         addToWorkbookMenu(
-                                            item: workbooks.makeItem(kind: .summary, title: summary.title, url: summary.url)
+                                            item: workbooks.makeItem(
+                                                kind: .summary, title: summary.title, url: summary.url)
                                         )
                                         Button("Rename…") {
                                             agent.promptRenameSummary(summary)
@@ -228,10 +230,12 @@ struct DocumentTabBar: View {
         let isPrimary = store.selectedTabID == tab.id
         let isSecondary = store.secondaryTabID == tab.id
         let isPaneTab = isPrimary || isSecondary
-        let isFocusedTab = (isPrimary && store.focusedPane == .primary)
+        let isFocusedTab =
+            (isPrimary && store.focusedPane == .primary)
             || (isSecondary && store.focusedPane == .secondary)
 
-        let background: Color = isFocusedTab
+        let background: Color =
+            isFocusedTab
             ? Color(nsColor: .controlBackgroundColor)
             : (isPaneTab ? Color(nsColor: .controlBackgroundColor).opacity(0.5) : .clear)
 
@@ -295,7 +299,8 @@ struct DocumentTabBar: View {
     }
 
     private func pinnedTabButton(for tab: PDFDocumentTab) -> some View {
-        let isFocusedTab = store.selectedTabID == tab.id && store.focusedPane == .primary
+        let isFocusedTab =
+            store.selectedTabID == tab.id && store.focusedPane == .primary
             || store.secondaryTabID == tab.id && store.focusedPane == .secondary
 
         return Button {

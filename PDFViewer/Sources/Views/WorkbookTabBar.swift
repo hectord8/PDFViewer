@@ -39,7 +39,7 @@ struct WorkbookTabBar: View {
         .background(.bar)
         .overlay(alignment: .trailing) {
             Button {
-                workbooks.activeWorkbookID = nil
+                workbooks.selectWorkbook(nil)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
@@ -70,66 +70,71 @@ struct WorkbookTabBar: View {
             switch item.kind {
             case .pdf:
                 guard let tab = store.tabs.first(where: { $0.url.path == item.path }) else { return }
-                result.append(Entry(
-                    item: item,
-                    folder: folder,
-                    isActive: store.activeTab?.id == tab.id,
-                    select: { store.select(tab) },
-                    close: { store.closeTab(tab) },
-                    split: { store.split(with: tab) },
-                    reload: { store.reload(tab) },
-                    duplicate: { store.duplicate(tab) }
-                ))
+                result.append(
+                    Entry(
+                        item: item,
+                        folder: folder,
+                        isActive: store.activeTab?.id == tab.id,
+                        select: { store.select(tab) },
+                        close: { store.closeTab(tab) },
+                        split: { store.split(with: tab) },
+                        reload: { store.reload(tab) },
+                        duplicate: { store.duplicate(tab) }
+                    ))
             case .summary:
                 guard let summary = store.summaries.first(where: { $0.fileURL?.path == item.path }) else { return }
-                result.append(Entry(
-                    item: item,
-                    folder: folder,
-                    isActive: store.selectedSummaryID == summary.id,
-                    select: { store.selectSummary(summary) },
-                    close: { store.closeSummary(summary) },
-                    split: nil,
-                    reload: nil,
-                    duplicate: nil
-                ))
+                result.append(
+                    Entry(
+                        item: item,
+                        folder: folder,
+                        isActive: store.selectedSummaryID == summary.id,
+                        select: { store.selectSummary(summary) },
+                        close: { store.closeSummary(summary) },
+                        split: nil,
+                        reload: nil,
+                        duplicate: nil
+                    ))
             case .deck:
                 guard let deck = store.flashcards.first(where: { $0.deckURL?.path == item.path }) else { return }
-                result.append(Entry(
-                    item: item,
-                    folder: folder,
-                    isActive: store.selectedFlashcardID == deck.id,
-                    select: { store.selectFlashcard(deck) },
-                    close: { store.closeFlashcard(deck) },
-                    split: nil,
-                    reload: nil,
-                    duplicate: nil
-                ))
+                result.append(
+                    Entry(
+                        item: item,
+                        folder: folder,
+                        isActive: store.selectedFlashcardID == deck.id,
+                        select: { store.selectFlashcard(deck) },
+                        close: { store.closeFlashcard(deck) },
+                        split: nil,
+                        reload: nil,
+                        duplicate: nil
+                    ))
             case .file:
                 return
             case .note:
                 guard let note = store.notes.first(where: { $0.fileURL?.path == item.path }) else { return }
-                result.append(Entry(
-                    item: item,
-                    folder: folder,
-                    isActive: store.selectedNoteID == note.id,
-                    select: { store.selectNote(note) },
-                    close: { store.closeNote(note) },
-                    split: nil,
-                    reload: nil,
-                    duplicate: nil
-                ))
+                result.append(
+                    Entry(
+                        item: item,
+                        folder: folder,
+                        isActive: store.selectedNoteID == note.id,
+                        select: { store.selectNote(note) },
+                        close: { store.closeNote(note) },
+                        split: nil,
+                        reload: nil,
+                        duplicate: nil
+                    ))
             case .quiz:
                 guard let quiz = store.quizzes.first(where: { $0.fileURL?.path == item.path }) else { return }
-                result.append(Entry(
-                    item: item,
-                    folder: folder,
-                    isActive: store.selectedQuizID == quiz.id,
-                    select: { store.selectQuiz(quiz) },
-                    close: { store.closeQuiz(quiz) },
-                    split: nil,
-                    reload: nil,
-                    duplicate: nil
-                ))
+                result.append(
+                    Entry(
+                        item: item,
+                        folder: folder,
+                        isActive: store.selectedQuizID == quiz.id,
+                        select: { store.selectQuiz(quiz) },
+                        close: { store.closeQuiz(quiz) },
+                        split: nil,
+                        reload: nil,
+                        duplicate: nil
+                    ))
             }
         }
 

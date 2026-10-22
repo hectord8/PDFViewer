@@ -8,7 +8,8 @@ enum MainMenuTweaks {
 
     static func apply() {
         guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.title == "File" }),
-              let items = fileMenu.submenu?.items else { return }
+            let items = fileMenu.submenu?.items
+        else { return }
 
         for item in items where item.action == #selector(NSWindow.performClose(_:)) {
             item.keyEquivalent = ""

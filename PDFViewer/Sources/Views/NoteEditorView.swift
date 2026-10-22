@@ -98,7 +98,7 @@ final class NoteTextView: NSTextView {
     var onOutdent: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 48 { // Tab
+        if event.keyCode == 48 {  // Tab
             if event.modifierFlags.contains(.shift) {
                 onOutdent?()
             } else {
@@ -106,7 +106,38 @@ final class NoteTextView: NSTextView {
             }
             return
         }
+        if event.keyCode == 51, backspaceDedents() {  // Backspace at line start
+            onOutdent?()
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    /// True when Backspace is pressed with the caret at the very start of an
+    /// indented paragraph, so it should outdent rather than delete.
+    private func backspaceDedents() -> Bool {
+        let selection = selectedRange()
+        guard selection.length == 0 else { return false }
+
+        let ns = string as NSString
+        let paragraph = ns.paragraphRange(for: NSRange(location: selection.location, length: 0))
+
+        // Position of the first non-tab character in the paragraph.
+        var contentStart = paragraph.location
+        while contentStart < paragraph.location + paragraph.length,
+            ns.substring(with: NSRange(location: contentStart, length: 1)) == "\t"
+        {
+            contentStart += 1
+        }
+        guard selection.location == contentStart else { return false }
+
+        if let style = textStorage?.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil)
+            as? NSParagraphStyle,
+            style.headIndent > 0
+        {
+            return true
+        }
+        return contentStart > paragraph.location
     }
 
     // MARK: - Images (screenshots) dropped or pasted in
@@ -142,7 +173,8 @@ final class NoteTextView: NSTextView {
 
     private func image(from pasteboard: NSPasteboard) -> NSImage? {
         if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
-           let first = images.first {
+            let first = images.first
+        {
             return first
         }
         if let urls = pasteboard.readObjects(
@@ -167,14 +199,16 @@ final class NoteTextView: NSTextView {
 
         guard let storage = textStorage else { return }
         let location = min(max(index, 0), storage.length)
-        storage.replaceCharacters(in: NSRange(location: location, length: 0), with: NSAttributedString(attachment: attachment))
+        storage.replaceCharacters(
+            in: NSRange(location: location, length: 0), with: NSAttributedString(attachment: attachment))
         didChangeText()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.modifierFlags.contains(.command),
-              !event.modifierFlags.contains(.option),
-              !event.modifierFlags.contains(.control) else {
+            !event.modifierFlags.contains(.option),
+            !event.modifierFlags.contains(.control)
+        else {
             return super.performKeyEquivalent(with: event)
         }
 
@@ -250,7 +284,7 @@ struct RichTextEditorView: NSViewRepresentable {
             scroll.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
         return container
@@ -336,7 +370,8 @@ struct RichTextEditorView: NSViewRepresentable {
 
             storage.beginEditing()
             storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subRange, _ in
-                let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                let style =
+                    (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
                 if !style.textLists.isEmpty {
                     style.textLists = []
                     style.headIndent = 0
@@ -447,7 +482,8 @@ struct RichTextEditorView: NSViewRepresentable {
             let range = textView.selectedRange()
             guard range.length > 0 else { return }
             let current = storage.attribute(.underlineStyle, at: range.location, effectiveRange: nil) as? Int ?? 0
-            storage.addAttribute(.underlineStyle, value: current == 0 ? NSUnderlineStyle.single.rawValue : 0, range: range)
+            storage.addAttribute(
+                .underlineStyle, value: current == 0 ? NSUnderlineStyle.single.rawValue : 0, range: range)
             notifyChange()
         }
 
@@ -466,7 +502,8 @@ struct RichTextEditorView: NSViewRepresentable {
 
             storage.beginEditing()
             storage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subRange, _ in
-                let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                let style =
+                    (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
                 style.firstLineHeadIndent = max(0, style.firstLineHeadIndent + delta)
                 style.headIndent = max(0, style.headIndent + delta)
                 if !style.textLists.isEmpty {
@@ -478,7 +515,9 @@ struct RichTextEditorView: NSViewRepresentable {
 
             if storage.length > 0 {
                 let location = min(textView.selectedRange().location, storage.length - 1)
-                if let style = storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle {
+                if let style = storage.attribute(.paragraphStyle, at: location, effectiveRange: nil)
+                    as? NSParagraphStyle
+                {
                     var attributes = textView.typingAttributes
                     attributes[.paragraphStyle] = style
                     textView.typingAttributes = attributes
@@ -503,7 +542,8 @@ struct RichTextEditorView: NSViewRepresentable {
             let ns = storage.string as NSString
             let paragraph = ns.paragraphRange(for: NSRange(location: textView.selectedRange().location, length: 0))
             guard paragraph.length > 0,
-                  ns.substring(with: NSRange(location: paragraph.location, length: 1)) == "\t" else {
+                ns.substring(with: NSRange(location: paragraph.location, length: 1)) == "\t"
+            else {
                 return false
             }
             storage.replaceCharacters(in: NSRange(location: paragraph.location, length: 1), with: "")
@@ -523,7 +563,8 @@ struct RichTextEditorView: NSViewRepresentable {
             let endsWithNewline = paragraph.hasSuffix("\n")
             if endsWithNewline { paragraph = String(paragraph.dropLast()) }
 
-            let caretAtEnd = selection.location == paragraphRange.location + paragraphRange.length
+            let caretAtEnd =
+                selection.location == paragraphRange.location + paragraphRange.length
                 || (endsWithNewline && selection.location == paragraphRange.location + paragraphRange.length - 1)
             guard caretAtEnd else { return }
 
@@ -547,7 +588,8 @@ struct RichTextEditorView: NSViewRepresentable {
             style.tabStops = [NSTextTab(textAlignment: .left, location: 22)]
 
             let font = textView.font ?? NSFont.systemFont(ofSize: 13)
-            let newRange = (storage.string as NSString).paragraphRange(for: NSRange(location: textRange.location, length: 0))
+            let newRange = (storage.string as NSString).paragraphRange(
+                for: NSRange(location: textRange.location, length: 0))
             if newRange.length > 0 {
                 storage.addAttribute(.paragraphStyle, value: style, range: newRange)
             }

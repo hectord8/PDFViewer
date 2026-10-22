@@ -86,16 +86,8 @@ struct ContentView: View {
     }
 
     private var activeWorkbook: Workbook? {
-        if let id = workbooks.activeWorkbookID,
-           let workbook = workbooks.workbooks.first(where: { $0.id == id }) {
-            return workbook
-        }
-        // Fall back to the workbook that owns the document currently open.
-        if let path = store.selectedTab?.url.path,
-           let workbook = workbooks.workbooks.first(where: { $0.containsPath(path) }) {
-            return workbook
-        }
-        return nil
+        guard let id = workbooks.activeWorkbookID else { return nil }
+        return workbooks.workbooks.first(where: { $0.id == id })
     }
 
     /// Whether any of the workbook's files are open (so the strip is only shown
@@ -134,15 +126,24 @@ struct ContentView: View {
 
         if overflow > 0, showingNotes {
             let reduce = min(overflow, notes - minNotesWidth)
-            if reduce > 0 { notes -= reduce; overflow -= reduce }
+            if reduce > 0 {
+                notes -= reduce
+                overflow -= reduce
+            }
         }
         if overflow > 0, store.showAgentPanel {
             let reduce = min(overflow, agent - minAgentWidth)
-            if reduce > 0 { agent -= reduce; overflow -= reduce }
+            if reduce > 0 {
+                agent -= reduce
+                overflow -= reduce
+            }
         }
         if overflow > 0, store.showLibrary {
             let reduce = min(overflow, library - minLibraryWidth)
-            if reduce > 0 { library -= reduce; overflow -= reduce }
+            if reduce > 0 {
+                library -= reduce
+                overflow -= reduce
+            }
         }
 
         return (library, notes, agent)

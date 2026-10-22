@@ -151,7 +151,8 @@ final class AgentChatModel: ObservableObject {
         summaryFolder = UserDefaults.standard.string(forKey: Self.summaryFolderKey) ?? Self.defaultSummaryFolder
         quizFolder = UserDefaults.standard.string(forKey: Self.quizFolderKey) ?? Self.defaultQuizFolder
         if let raw = UserDefaults.standard.string(forKey: Self.scopeKey),
-           let scope = ContextScope(rawValue: raw) {
+            let scope = ContextScope(rawValue: raw)
+        {
             contextScope = scope
         }
     }
@@ -254,7 +255,7 @@ final class AgentChatModel: ObservableObject {
             "serve",
             "--port", String(port),
             "--hostname", "127.0.0.1",
-            "--print-logs"
+            "--print-logs",
         ]
 
         let pipe = Pipe()
@@ -637,7 +638,8 @@ final class AgentChatModel: ObservableObject {
             messages.append(
                 ChatMessage(
                     role: .assistant,
-                    text: "Created the quiz “\(title)” with \(tab.questions.count) question\(tab.questions.count == 1 ? "" : "s"). Answer in the new tab, then press “Mark quiz”.",
+                    text:
+                        "Created the quiz “\(title)” with \(tab.questions.count) question\(tab.questions.count == 1 ? "" : "s"). Answer in the new tab, then press “Mark quiz”.",
                     attachedContext: nil
                 )
             )
@@ -753,13 +755,15 @@ final class AgentChatModel: ObservableObject {
 
     private static func parseQuiz(_ text: String) -> ParsedQuiz? {
         guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(QuizPayload.self, from: data) else {
+            let payload = try? JSONDecoder().decode(QuizPayload.self, from: data)
+        else {
             return nil
         }
 
         let questions = (payload.questions ?? []).compactMap { item -> QuizQuestion? in
             guard let prompt = item.question?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !prompt.isEmpty else { return nil }
+                !prompt.isEmpty
+            else { return nil }
 
             let options = (item.options ?? [])
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -781,8 +785,9 @@ final class AgentChatModel: ObservableObject {
 
     private static func parseGrading(_ text: String) -> [GradedResult]? {
         guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(GradePayload.self, from: data),
-              let items = payload.results, !items.isEmpty else {
+            let payload = try? JSONDecoder().decode(GradePayload.self, from: data),
+            let items = payload.results, !items.isEmpty
+        else {
             return nil
         }
 
@@ -805,8 +810,9 @@ final class AgentChatModel: ObservableObject {
 
     private static func jsonObject(in text: String) -> String? {
         guard let start = text.firstIndex(of: "{"),
-              let end = text.lastIndex(of: "}"),
-              start < end else { return nil }
+            let end = text.lastIndex(of: "}"),
+            start < end
+        else { return nil }
         return String(text[start...end])
     }
 
@@ -823,18 +829,18 @@ final class AgentChatModel: ObservableObject {
 
     private static func quizGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create an exam-style quiz for revising for a final exam, with a mix of multiple-choice and open short-answer questions. Questions should be conceptual, applied and integrative — testing the concepts most likely to be assessed, not notation, formats or trivia. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
-        {"title": "Quiz title", "questions": [{"question": "The question text", "type": "mc", "options": ["First", "Second", "Third", "Fourth"], "answer": "Second", "marks": 1}, {"question": "Another question", "type": "open", "answer": "A concise model answer used for marking", "marks": 2}]}
-        For multiple-choice questions use "type": "mc" with exactly 4 "options" and "answer" set to the exact text of the correct option. For written questions use "type": "open" with a model "answer". Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
-        """
+            Create an exam-style quiz for revising for a final exam, with a mix of multiple-choice and open short-answer questions. Questions should be conceptual, applied and integrative — testing the concepts most likely to be assessed, not notation, formats or trivia. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+            {"title": "Quiz title", "questions": [{"question": "The question text", "type": "mc", "options": ["First", "Second", "Third", "Fourth"], "answer": "Second", "marks": 1}, {"question": "Another question", "type": "open", "answer": "A concise model answer used for marking", "marks": 2}]}
+            For multiple-choice questions use "type": "mc" with exactly 4 "options" and "answer" set to the exact text of the correct option. For written questions use "type": "open" with a model "answer". Write 5 questions unless the request says otherwise. "marks" is a small positive integer.
+            """
 
         if let context, !context.isEmpty {
             request += """
 
-            [Material]
-            \(context)
-            [End material]
-            """
+                [Material]
+                \(context)
+                [End material]
+                """
         }
 
         return request + "\n\nRequest: \(prompt)"
@@ -845,21 +851,22 @@ final class AgentChatModel: ObservableObject {
         for entry in pending {
             let question = entry.question
             let student = quiz.answers.indices.contains(entry.index - 1) ? quiz.answers[entry.index - 1] : ""
-            lines.append("""
-            Question \(entry.index) (worth \(question.marks) mark\(question.marks == 1 ? "" : "s")):
-            Q: \(question.prompt)
-            Model answer: \(question.answer)
-            Student answer: \(student.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(no answer)" : student)
-            """)
+            lines.append(
+                """
+                Question \(entry.index) (worth \(question.marks) mark\(question.marks == 1 ? "" : "s")):
+                Q: \(question.prompt)
+                Model answer: \(question.answer)
+                Student answer: \(student.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(no answer)" : student)
+                """)
         }
 
         return """
-        Mark only the questions listed below. For each, decide whether the student's answer is correct, award an integer from 0 to the question's marks, and give one short sentence of feedback. Be tolerant of different wording. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
-        {"results": [{"index": 1, "correct": true, "awarded": 1, "feedback": "why"}]}
-        Use each question's given number as its "index".
+            Mark only the questions listed below. For each, decide whether the student's answer is correct, award an integer from 0 to the question's marks, and give one short sentence of feedback. Be tolerant of different wording. Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+            {"results": [{"index": 1, "correct": true, "awarded": 1, "feedback": "why"}]}
+            Use each question's given number as its "index".
 
-        \(lines.joined(separator: "\n\n"))
-        """
+            \(lines.joined(separator: "\n\n"))
+            """
     }
 
     private struct QuizFile: Codable {
@@ -906,14 +913,17 @@ final class AgentChatModel: ObservableObject {
 
     func openSavedQuiz(at url: URL) {
         guard let data = try? Data(contentsOf: url),
-              let file = try? JSONDecoder().decode(QuizFile.self, from: data) else {
+            let file = try? JSONDecoder().decode(QuizFile.self, from: data)
+        else {
             log("Couldn’t read \(url.path)")
             return
         }
         let questions = file.questions.map { item in
             let options = item.options ?? []
             let kind: QuizQuestionKind = item.type == "mc" && options.count >= 2 ? .multipleChoice : .open
-            return QuizQuestion(prompt: item.prompt, answer: item.answer, marks: item.marks, kind: kind, options: kind == .multipleChoice ? options : [])
+            return QuizQuestion(
+                prompt: item.prompt, answer: item.answer, marks: item.marks, kind: kind,
+                options: kind == .multipleChoice ? options : [])
         }
         library.openQuiz(QuizTab(title: file.title, questions: questions, fileURL: url))
         log("Opened quiz “\(file.title)”.")
@@ -928,11 +938,13 @@ final class AgentChatModel: ObservableObject {
 
     func refreshSavedQuizzes() {
         let root = URL(fileURLWithPath: (quizFolder as NSString).expandingTildeInPath, isDirectory: true)
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             savedQuizzes = []
             return
         }
@@ -940,8 +952,11 @@ final class AgentChatModel: ObservableObject {
         var list: [SavedQuiz] = []
         for entry in entries where entry.pathExtension.lowercased() == "json" {
             guard let data = try? Data(contentsOf: entry),
-                  let file = try? JSONDecoder().decode(QuizFile.self, from: data) else { continue }
-            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let file = try? JSONDecoder().decode(QuizFile.self, from: data)
+            else { continue }
+            let modified =
+                (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? .distantPast
             list.append(SavedQuiz(id: entry.path, title: file.title, url: entry, modified: modified))
         }
         savedQuizzes = list.sorted { $0.modified > $1.modified }
@@ -986,7 +1001,8 @@ final class AgentChatModel: ObservableObject {
         let title = uniqueQuizTitle(newName, excluding: quiz.url)
 
         guard let data = try? Data(contentsOf: quiz.url),
-              let file = try? JSONDecoder().decode(QuizFile.self, from: data) else {
+            let file = try? JSONDecoder().decode(QuizFile.self, from: data)
+        else {
             log("Couldn’t read \(quiz.url.path)")
             return
         }
@@ -1053,11 +1069,13 @@ final class AgentChatModel: ObservableObject {
         )
         let fileManager = FileManager.default
 
-        guard let entries = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let entries = try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             savedDecks = []
             return
         }
@@ -1069,7 +1087,8 @@ final class AgentChatModel: ObservableObject {
 
             let deckFile = entry.appendingPathComponent("deck.json")
             guard let data = try? Data(contentsOf: deckFile),
-                  let decoded = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+                let decoded = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data)
+            else {
                 continue
             }
 
@@ -1089,7 +1108,8 @@ final class AgentChatModel: ObservableObject {
 
     func openSavedDeck(_ deck: SavedDeck) {
         guard let data = try? Data(contentsOf: deck.url.appendingPathComponent("deck.json")),
-              let file = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+            let file = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data)
+        else {
             log("Couldn’t read \(deck.url.path)/deck.json")
             return
         }
@@ -1135,7 +1155,8 @@ final class AgentChatModel: ObservableObject {
 
         let deckFile = deck.url.appendingPathComponent("deck.json")
         guard let data = try? Data(contentsOf: deckFile),
-              let existing = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data) else {
+            let existing = try? JSONDecoder().decode(FlashcardDeckFile.self, from: data)
+        else {
             log("Couldn’t read \(deckFile.path)")
             return
         }
@@ -1193,19 +1214,23 @@ final class AgentChatModel: ObservableObject {
         if lower.contains("flash card") || lower.contains("flash cards") || lower.contains("flip card") {
             return true
         }
-        return lower
+        return
+            lower
             .split(whereSeparator: { !$0.isLetter })
             .contains { $0 == "flashcard" || $0 == "flashcards" || $0 == "anki" }
     }
 
     func chooseFlashcardFolder() {
-        guard let url = chooseFolder(message: "Choose where flashcard decks are saved", startingAt: flashcardFolder) else { return }
+        guard let url = chooseFolder(message: "Choose where flashcard decks are saved", startingAt: flashcardFolder)
+        else { return }
         flashcardFolder = url.path
         log("Flashcard folder set to \(url.path).")
     }
 
     func chooseSummaryFolder() {
-        guard let url = chooseFolder(message: "Choose where summaries are saved", startingAt: summaryFolder) else { return }
+        guard let url = chooseFolder(message: "Choose where summaries are saved", startingAt: summaryFolder) else {
+            return
+        }
         summaryFolder = url.path
         log("Summary folder set to \(url.path).")
     }
@@ -1263,7 +1288,8 @@ final class AgentChatModel: ObservableObject {
                 messages.append(
                     ChatMessage(
                         role: .assistant,
-                        text: "Created \(deck.cards.count) flashcards and saved them to “\(savedURL.path)”. They’re open in a new tab.",
+                        text:
+                            "Created \(deck.cards.count) flashcards and saved them to “\(savedURL.path)”. They’re open in a new tab.",
                         attachedContext: nil
                     )
                 )
@@ -1272,7 +1298,8 @@ final class AgentChatModel: ObservableObject {
                 messages.append(
                     ChatMessage(
                         role: .assistant,
-                        text: "Created \(deck.cards.count) flashcards in a new tab, but saving them to “\(flashcardFolder)” failed. Check the folder in settings.",
+                        text:
+                            "Created \(deck.cards.count) flashcards in a new tab, but saving them to “\(flashcardFolder)” failed. Check the folder in settings.",
                         attachedContext: nil
                     )
                 )
@@ -1340,13 +1367,15 @@ final class AgentChatModel: ObservableObject {
 
     private static func parseFlashcards(_ text: String) -> ParsedFlashcards? {
         guard let json = jsonObject(in: text), let data = json.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(FlashcardPayload.self, from: data) else {
+            let payload = try? JSONDecoder().decode(FlashcardPayload.self, from: data)
+        else {
             return nil
         }
 
         let cards = (payload.cards ?? []).compactMap { item -> Flashcard? in
             guard let front = item.front?.trimmingCharacters(in: .whitespacesAndNewlines), !front.isEmpty,
-                  let back = item.back?.trimmingCharacters(in: .whitespacesAndNewlines), !back.isEmpty else {
+                let back = item.back?.trimmingCharacters(in: .whitespacesAndNewlines), !back.isEmpty
+            else {
                 return nil
             }
             return Flashcard(front: front, back: back)
@@ -1398,10 +1427,10 @@ final class AgentChatModel: ObservableObject {
 
     private static func flashcardGenerationRequest(prompt: String, context: String?) -> String {
         var request = """
-        Create flashcards for revising for a final exam. Each card must test understanding that could actually be examined — concepts, reasoning, mechanisms, comparisons, cause and effect, and applications. Prefer "why", "how" and "what happens if" over isolated facts. Do not make cards for notation, symbol or parameter formats, bare definitions with no reasoning, or lecture-specific trivia — for example, "what format is a percept" is a waste of time and must be skipped. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
-        {"title": "Deck title", "cards": [{"front": "prompt or question", "back": "answer"}]}
-        Make as many cards as the material genuinely supports: cover the distinct examinable ideas, but don't pad to a round number and don't add trivial, vague or repetitive filler. If the request asks for a specific number, follow that instead. Keep each side short and focused.
-        """
+            Create flashcards for revising for a final exam. Each card must test understanding that could actually be examined — concepts, reasoning, mechanisms, comparisons, cause and effect, and applications. Prefer "why", "how" and "what happens if" over isolated facts. Do not make cards for notation, symbol or parameter formats, bare definitions with no reasoning, or lecture-specific trivia — for example, "what format is a percept" is a waste of time and must be skipped. Write any mathematics as LaTeX (inline $...$, display $$...$$); since this is JSON, escape backslashes in LaTeX (write \\frac as \\\\frac). Respond with ONLY valid JSON — no prose, no markdown, no code fences — using exactly this shape:
+            {"title": "Deck title", "cards": [{"front": "prompt or question", "back": "answer"}]}
+            Make as many cards as the material genuinely supports: cover the distinct examinable ideas, but don't pad to a round number and don't add trivial, vague or repetitive filler. If the request asks for a specific number, follow that instead. Keep each side short and focused.
+            """
 
         if let context, !context.isEmpty {
             request += "\n\n[Material]\n\(context)\n[End material]"
@@ -1415,7 +1444,8 @@ final class AgentChatModel: ObservableObject {
     static func looksLikeAnnotate(_ prompt: String) -> Bool {
         let lower = prompt.lowercased()
         if lower.contains("margin note") || lower.contains("side note") { return true }
-        return lower
+        return
+            lower
             .split(whereSeparator: { !$0.isLetter })
             .contains { $0 == "annotate" || $0 == "annotation" || $0 == "annotations" }
     }
@@ -1553,10 +1583,12 @@ final class AgentChatModel: ObservableObject {
     static func looksLikeSummary(_ prompt: String) -> Bool {
         let lower = prompt.lowercased()
         if lower.contains("tl;dr") || lower.contains("summary")
-            || lower.contains("summarize") || lower.contains("summarise") {
+            || lower.contains("summarize") || lower.contains("summarise")
+        {
             return true
         }
-        return lower
+        return
+            lower
             .split(whereSeparator: { !$0.isLetter })
             .contains { $0 == "overview" || $0 == "recap" }
     }
@@ -1569,18 +1601,22 @@ final class AgentChatModel: ObservableObject {
         )
         let fileManager = FileManager.default
 
-        guard let entries = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let entries = try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             savedSummaries = []
             return
         }
 
         var list: [SavedSummary] = []
         for entry in entries where entry.pathExtension.lowercased() == "md" {
-            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let modified =
+                (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? .distantPast
             let title = Self.summaryFile(at: entry)?.title ?? entry.deletingPathExtension().lastPathComponent
             list.append(SavedSummary(id: entry.path, title: title, url: entry, modified: modified))
         }
@@ -1639,7 +1675,9 @@ final class AgentChatModel: ObservableObject {
             guard !text.isEmpty else {
                 log("Empty summary — showing the reply as a normal answer.")
                 messages.append(
-                    ChatMessage(role: .assistant, text: reply.trimmingCharacters(in: .whitespacesAndNewlines), attachedContext: nil)
+                    ChatMessage(
+                        role: .assistant, text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                        attachedContext: nil)
                 )
                 return
             }
@@ -1667,7 +1705,8 @@ final class AgentChatModel: ObservableObject {
                 messages.append(
                     ChatMessage(
                         role: .assistant,
-                        text: "Created a summary in a new tab, but saving it to “\(summaryFolder)” failed. Check the folder in settings.",
+                        text:
+                            "Created a summary in a new tab, but saving it to “\(summaryFolder)” failed. Check the folder in settings.",
                         attachedContext: nil
                     )
                 )
@@ -1709,7 +1748,8 @@ final class AgentChatModel: ObservableObject {
         let newURL = Self.uniqueFileURL(in: root, slug: Self.slug(title), excluding: summary.url)
 
         do {
-            try Self.summaryFileContents(title: title, text: parsed.text).write(to: newURL, atomically: true, encoding: .utf8)
+            try Self.summaryFileContents(title: title, text: parsed.text).write(
+                to: newURL, atomically: true, encoding: .utf8)
             if newURL != summary.url {
                 try FileManager.default.removeItem(at: summary.url)
             }
@@ -1762,8 +1802,8 @@ final class AgentChatModel: ObservableObject {
 
     private static func summaryRequest(prompt: String, context: String?) -> String {
         var request = """
-        Summarize the material below as a final-exam study aid, in clear, well-structured Markdown: a one-paragraph overview, then the key examinable concepts as bullets (definitions, mechanisms, comparisons, applications), then any important conclusions or takeaways. Write any mathematics as LaTeX (inline $...$, display $$...$$). Prioritise what is most likely to be assessed and leave out lecture-specific trivia, notation or parameter formats, and throwaway details. Be concise but cover everything important. Respond with Markdown only — no JSON, and don't wrap the whole answer in a code fence.
-        """
+            Summarize the material below as a final-exam study aid, in clear, well-structured Markdown: a one-paragraph overview, then the key examinable concepts as bullets (definitions, mechanisms, comparisons, applications), then any important conclusions or takeaways. Write any mathematics as LaTeX (inline $...$, display $$...$$). Prioritise what is most likely to be assessed and leave out lecture-specific trivia, notation or parameter formats, and throwaway details. Be concise but cover everything important. Respond with Markdown only — no JSON, and don't wrap the whole answer in a code fence.
+            """
 
         if let context, !context.isEmpty {
             request += "\n\n[Material]\n\(context)\n[End material]"
@@ -1821,7 +1861,8 @@ final class AgentChatModel: ObservableObject {
 
     private func addToActiveWorkbook(kind: WorkbookItemKind, title: String, url: URL?) {
         guard let url, let workbookID = workbooks.activeWorkbookID,
-              let workbook = workbooks.workbooks.first(where: { $0.id == workbookID }) else { return }
+            let workbook = workbooks.workbooks.first(where: { $0.id == workbookID })
+        else { return }
 
         let folderName: String
         switch kind {
@@ -1834,7 +1875,8 @@ final class AgentChatModel: ObservableObject {
         }
 
         let folderID: UUID?
-        if let existing = workbook.folders.first(where: { $0.name.caseInsensitiveCompare(folderName) == .orderedSame }) {
+        if let existing = workbook.folders.first(where: { $0.name.caseInsensitiveCompare(folderName) == .orderedSame })
+        {
             folderID = existing.id
         } else {
             folderID = workbooks.addFolder(named: folderName, to: workbookID)
@@ -1924,14 +1966,14 @@ final class AgentChatModel: ObservableObject {
             return "\(latex)\n\n\(question)"
         }
         return """
-        The user is reading a PDF in a macOS app. \(latex)
+            The user is reading a PDF in a macOS app. \(latex)
 
-        [PDF page context]
-        \(context)
-        [End PDF page context]
+            [PDF page context]
+            \(context)
+            [End PDF page context]
 
-        \(question)
-        """
+            \(question)
+            """
     }
 
     /// Builds the PDF text attached to a request for the given scope.
@@ -1975,7 +2017,7 @@ final class AgentChatModel: ObservableObject {
         "may", "might", "will", "shall", "do", "does", "did", "has", "have", "had", "how", "what",
         "when", "where", "which", "who", "whom", "why", "if", "about", "your", "you", "their", "they",
         "them", "he", "she", "his", "her", "we", "our", "us", "i", "explain", "describe", "tell", "me",
-        "give", "list", "question", "answer", "please"
+        "give", "list", "question", "answer", "please",
     ]
 
     private static func tokenize(_ text: String) -> [String: Int] {
@@ -2004,15 +2046,22 @@ final class AgentChatModel: ObservableObject {
             switch item.kind {
             case .summary:
                 guard let url = store.url(for: item),
-                      let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                chunks.append(WorkbookChunk(title: item.title, page: nil, path: item.path, text: text, termCounts: tokenize(text)))
+                    let text = try? String(contentsOf: url, encoding: .utf8)
+                else { continue }
+                chunks.append(
+                    WorkbookChunk(title: item.title, page: nil, path: item.path, text: text, termCounts: tokenize(text))
+                )
             case .pdf:
                 guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
                 for index in 0..<document.pageCount {
                     guard let page = document.page(at: index),
-                          let text = page.string,
-                          !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                    chunks.append(WorkbookChunk(title: item.title, page: index + 1, path: item.path, text: text, termCounts: tokenize(text)))
+                        let text = page.string,
+                        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { continue }
+                    chunks.append(
+                        WorkbookChunk(
+                            title: item.title, page: index + 1, path: item.path, text: text, termCounts: tokenize(text))
+                    )
                 }
             case .deck, .quiz, .note, .file:
                 continue
@@ -2026,7 +2075,8 @@ final class AgentChatModel: ObservableObject {
             }
         }
 
-        let signature = workbook.id.uuidString + "|"
+        let signature =
+            workbook.id.uuidString + "|"
             + items.map { "\($0.kind.rawValue):\($0.path)" }.joined(separator: "|")
         return WorkbookIndex(signature: signature, chunks: chunks, documentFrequency: df)
     }
@@ -2062,7 +2112,8 @@ final class AgentChatModel: ObservableObject {
         items.append(contentsOf: workbook.items)
         guard !items.isEmpty else { return nil }
 
-        let signature = (focusPath ?? "") + "|" + (query ?? "")
+        let signature =
+            (focusPath ?? "") + "|" + (query ?? "")
             + "|" + items.map { "\($0.kind.rawValue):\($0.path)" }.joined(separator: "|")
         if let cached = workbookCache[id], cached.signature == signature {
             return cached.text
@@ -2103,7 +2154,8 @@ final class AgentChatModel: ObservableObject {
         for item in summaries {
             if used >= budget { break }
             guard let url = store.url(for: item),
-                  let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                let text = try? String(contentsOf: url, encoding: .utf8)
+            else { continue }
             if !append(item.title, text) { break }
         }
 
@@ -2150,7 +2202,9 @@ final class AgentChatModel: ObservableObject {
             guard let url = store.url(for: item), let document = PDFDocument(url: url) else { continue }
             var text = ""
             for index in 0..<document.pageCount {
-                guard let page = document.page(at: index), let pageText = page.string, !pageText.isEmpty else { continue }
+                guard let page = document.page(at: index), let pageText = page.string, !pageText.isEmpty else {
+                    continue
+                }
                 text += "\n--- Page \(index + 1) ---\n\(pageText)"
                 if text.count >= perDocumentCap { break }
             }
@@ -2234,7 +2288,7 @@ final class AgentChatModel: ObservableObject {
             "/opt/homebrew/bin/opencode",
             "/usr/local/bin/opencode",
             "\(home)/.bun/bin/opencode",
-            "\(home)/.local/bin/opencode"
+            "\(home)/.local/bin/opencode",
         ]
         for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
             return URL(fileURLWithPath: path)

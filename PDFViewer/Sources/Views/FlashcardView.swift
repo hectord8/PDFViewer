@@ -44,7 +44,8 @@ struct FlashcardView: View {
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         // Let text fields (e.g. the agent chat input) handle their own keys.
         if let responder = NSApp.keyWindow?.firstResponder,
-           responder is NSTextView || responder is NSTextField {
+            responder is NSTextView || responder is NSTextField
+        {
             return event
         }
 
@@ -53,10 +54,10 @@ struct FlashcardView: View {
         guard modifiers.isEmpty else { return event }
 
         switch event.keyCode {
-        case 123: // Left arrow
+        case 123:  // Left arrow
             tab.previous()
             return nil
-        case 124: // Right arrow
+        case 124:  // Right arrow
             tab.next()
             return nil
         default:
@@ -148,7 +149,9 @@ struct FlashcardView: View {
             if let card = tab.current {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(tab.showingBack ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+                        .fill(
+                            tab.showingBack ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor)
+                        )
                         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)

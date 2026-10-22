@@ -198,14 +198,17 @@ final class OpenCodeClient {
             }
             guard (200..<300).contains(http.statusCode) else {
                 if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data),
-                   let message = envelope.data?.message {
+                    let message = envelope.data?.message
+                {
                     throw ClientError(.http(http.statusCode), message)
                 }
                 let text = String(data: data, encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                throw ClientError(.http(http.statusCode), text?.isEmpty == false
-                    ? text!
-                    : "opencode returned HTTP \(http.statusCode).")
+                throw ClientError(
+                    .http(http.statusCode),
+                    text?.isEmpty == false
+                        ? text!
+                        : "opencode returned HTTP \(http.statusCode).")
             }
             return data
         } catch let error as ClientError {

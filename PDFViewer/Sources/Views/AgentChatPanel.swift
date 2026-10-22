@@ -237,10 +237,12 @@ struct AgentChatPanel: View {
             Text("Ask about this document")
                 .font(.system(size: 14, weight: .semibold))
 
-            Text("Choose the context, then ask a question. Select “Whole workbook” to search across everything in your workbook.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Choose the context, then ask a question. Select “Whole workbook” to search across everything in your workbook."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 20)
@@ -461,7 +463,8 @@ struct AgentChatPanel: View {
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
                 .background(
-                    Circle().fill((model.isSending || model.canSend) ? Color.accentColor : Color.secondary.opacity(0.35))
+                    Circle().fill(
+                        (model.isSending || model.canSend) ? Color.accentColor : Color.secondary.opacity(0.35))
                 )
         }
         .buttonStyle(.plain)
@@ -864,19 +867,19 @@ final class CommandLineTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76: // Return, keypad Enter
+        case 36, 76:  // Return, keypad Enter
             if event.modifierFlags.contains(.shift) {
                 insertNewline(nil)
             } else {
                 onSubmit?()
             }
-        case 126: // Up arrow
+        case 126:  // Up arrow
             if string.isEmpty || selectedRange().location == 0 {
                 onPrevious?()
             } else {
                 super.keyDown(with: event)
             }
-        case 125: // Down arrow
+        case 125:  // Down arrow
             if selectedRange().location >= (string as NSString).length {
                 onNext?()
             } else {

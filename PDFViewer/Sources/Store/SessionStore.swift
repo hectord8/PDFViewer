@@ -4,7 +4,8 @@ import Foundation
 enum SessionStore {
 
     static var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let base =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
 
         let folderName = Bundle.main.bundleIdentifier ?? "PDFViewer"

@@ -165,7 +165,8 @@ final class LibraryStore: ObservableObject {
             }
 
             guard let tab = PDFDocumentTab(url: url) else {
-                errorMessage = "“\(url.lastPathComponent)” could not be opened. "
+                errorMessage =
+                    "“\(url.lastPathComponent)” could not be opened. "
                     + "It may not be a valid PDF, may be damaged, or may use an unsupported encryption."
                 continue
             }
@@ -258,7 +259,8 @@ final class LibraryStore: ObservableObject {
     func selectAdjacentTab(offset: Int) {
         guard !tabs.isEmpty else { return }
         guard let current = activeTab?.id ?? selectedTabID,
-              let index = tabs.firstIndex(where: { $0.id == current }) else {
+            let index = tabs.firstIndex(where: { $0.id == current })
+        else {
             selectedTabID = tabs.first?.id
             scheduleSessionSave()
             return
@@ -391,8 +393,9 @@ final class LibraryStore: ObservableObject {
     /// folder), the same way generated flashcards/summaries are filed.
     private func addNoteToActiveWorkbook(_ note: NoteTab) {
         guard let url = note.fileURL,
-              let workbookID = workbooks.activeWorkbookID,
-              let workbook = workbooks.workbooks.first(where: { $0.id == workbookID }) else {
+            let workbookID = workbooks.activeWorkbookID,
+            let workbook = workbooks.workbooks.first(where: { $0.id == workbookID })
+        else {
             return
         }
 
@@ -788,7 +791,8 @@ final class LibraryStore: ObservableObject {
         }
 
         if let selectedPath = session.selectedPath,
-           let match = restored.first(where: { $0.url.path == selectedPath }) {
+            let match = restored.first(where: { $0.url.path == selectedPath })
+        {
             selectedTabID = match.id
         } else {
             selectedTabID = restored.first?.id

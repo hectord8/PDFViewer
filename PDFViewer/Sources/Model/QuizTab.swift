@@ -24,7 +24,9 @@ struct QuizQuestion: Identifiable {
     /// Index of the correct option (multiple-choice), matched from `answer`.
     var correctOptionIndex: Int? {
         guard kind == .multipleChoice else { return nil }
-        return options.firstIndex { $0.caseInsensitiveCompare(answer.trimmingCharacters(in: .whitespaces)) == .orderedSame }
+        return options.firstIndex {
+            $0.caseInsensitiveCompare(answer.trimmingCharacters(in: .whitespaces)) == .orderedSame
+        }
     }
 }
 
@@ -77,7 +79,8 @@ final class QuizTab: ObservableObject, Identifiable {
     /// Answered questions that haven't been marked yet.
     var pending: [(index: Int, question: QuizQuestion)] {
         questions.enumerated().compactMap { offset, question in
-            let answered = answers.indices.contains(offset)
+            let answered =
+                answers.indices.contains(offset)
                 && !answers[offset].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasResult = results.contains { $0.questionID == question.id }
             return answered && !hasResult ? (offset + 1, question) : nil

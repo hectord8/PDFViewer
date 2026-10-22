@@ -50,29 +50,25 @@ codesign --verify --strict --verbose=2 dist/PDFViewer.app
 Because it is ad-hoc and not notarized, it will only ever run on your Mac. That
 is fine for personal use.
 
-### Why no macOS update is needed
+### Requirements
 
-The app targets **macOS 14.0** and is compiled against the **15.5 SDK** that
-ships with your Command Line Tools. Running it requires macOS 14 or later. You
-are on 15.5, so you are already fine.
+The app targets **macOS 14.0** and builds either with the Command Line Tools or
+with the full Xcode toolchain. Running it requires macOS 14 or later.
 
-The macOS update is only needed for a *newer Xcode*, not for this app:
+| Xcode  | Needs macOS | Notes                           |
+| ------ | ----------- | ------------------------------- |
+| 27.x   | 26.6+       | Latest; project format updated  |
+| 26.3   | 15.6+       |                                 |
+| 16.4   | 15.3+       |                                 |
 
-| Xcode  | Needs macOS | Works on your 15.5? |
-| ------ | ----------- | ------------------- |
-| 26.x   | 15.6+       | No                  |
-| 16.4   | 15.3+       | Yes                 |
-| 16.3   | 15.5+       | Yes                 |
-| 16.2   | 14.5+       | Yes                 |
+The project is upgraded to the Xcode 27 project format (`objectVersion = 90`) and
+opts into Xcode 27's concurrency defaults.
 
-If you later want the Xcode IDE for debugging, install **Xcode 16.4** from
-<https://developer.apple.com/downloads/> rather than the App Store copy — the
-App Store will keep nudging you toward a version your machine cannot run.
+### What the Command Line Tools build cannot do
 
-### Two things this build cannot do
-
-- **No app icon.** `actool` (which compiles `.xcassets`) only ships with the full
-  Xcode, so the app shows the generic document icon. Cosmetic only.
+- **No app icon without Xcode.** `actool` (which compiles `.xcassets`) only ships
+  with the full Xcode, so a CLT-only build shows the generic document icon. With
+  Xcode installed, `build-app.sh` picks up `actool` and compiles the icon.
 - **No debugger.** Use `Console.app` or `log stream --predicate 'process ==
   "PDFViewer"'` to read messages.
 
@@ -92,10 +88,10 @@ BUILD_DIR=~/build ./build-app.sh
 Nothing here is required. Jump to section 3 if you want to start from a
 fresh template instead.
 
-### Install a compatible Xcode
+### Install Xcode
 
-Download **Xcode 16.4** from <https://developer.apple.com/downloads/> (see the
-table above for why not a newer one). Then point the command line tools at it:
+Install the latest **Xcode 27.x** from the App Store or
+<https://developer.apple.com/downloads/>. Then point the command line tools at it:
 
 ```bash
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
@@ -109,6 +105,26 @@ xcode-select -p     # must contain "Xcode.app"
 3. Press **⌘R**.
 
 The shared scheme is checked in, so it selects automatically.
+
+### Run the tests
+
+The **PDFViewerTests** target is part of the shared scheme, so **⌘U** runs the
+unit tests in Xcode. From a terminal:
+
+```bash
+./check.sh            # lint (advisory) + tests
+./check.sh --strict   # fail on lint warnings
+```
+
+`check.sh` builds SwiftPM in `/tmp` because codesign rejects the Finder metadata
+that iCloud stamps onto bundles inside `~/Documents`. If you run SwiftPM
+directly, pass a scratch path:
+
+```bash
+swift test --scratch-path /tmp/PDFViewer-swift-test
+```
+
+You can also open `Package.swift` in Xcode to run the same Swift Testing suite.
 
 ### Setting the bundle identifier
 

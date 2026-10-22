@@ -23,13 +23,17 @@ struct FindBar: View {
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 72, alignment: .trailing)
 
-            Button { tab.previousMatch() } label: {
+            Button {
+                tab.previousMatch()
+            } label: {
                 Image(systemName: "chevron.up")
             }
             .disabled(tab.matches.isEmpty)
             .help("Previous match")
 
-            Button { tab.nextMatch() } label: {
+            Button {
+                tab.nextMatch()
+            } label: {
                 Image(systemName: "chevron.down")
             }
             .disabled(tab.matches.isEmpty)

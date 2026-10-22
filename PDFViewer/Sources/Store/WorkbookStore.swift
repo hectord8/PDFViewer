@@ -9,28 +9,52 @@ final class WorkbookStore: ObservableObject {
     @Published private(set) var workbooks: [Workbook] = []
 
     /// The workbook whose files are shown in the workbook tab strip.
-    @Published var activeWorkbookID: UUID? {
+    @Published private(set) var activeWorkbookID: UUID? {
         didSet {
             if let id = activeWorkbookID {
-                UserDefaults.standard.set(id.uuidString, forKey: Self.activeKey)
+                defaults.set(id.uuidString, forKey: Self.activeKey)
             } else {
-                UserDefaults.standard.removeObject(forKey: Self.activeKey)
+                defaults.removeObject(forKey: Self.activeKey)
             }
         }
     }
 
     private static let activeKey = "activeWorkbookID"
+    private let defaults: UserDefaults
+    private let storageDirectory: URL
     private var saveWorkItem: DispatchWorkItem?
 
-    private init() {
+    init(defaults: UserDefaults = .standard, storageDirectory: URL? = nil) {
+        self.defaults = defaults
+        if let storageDirectory {
+            self.storageDirectory = storageDirectory
+        } else {
+            let base =
+                FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            self.storageDirectory = base.appendingPathComponent(
+                Bundle.main.bundleIdentifier ?? "PDFViewer", isDirectory: true)
+        }
         load()
         restoreActiveWorkbook()
     }
 
+    /// Selects the workbook shown in the tab strip. `nil` clears the selection;
+    /// an unknown id is ignored. This is the single writer of `activeWorkbookID`.
+    func selectWorkbook(_ id: UUID?) {
+        guard let id else {
+            activeWorkbookID = nil
+            return
+        }
+        guard workbooks.contains(where: { $0.id == id }) else { return }
+        activeWorkbookID = id
+    }
+
     private func restoreActiveWorkbook() {
-        guard let stored = UserDefaults.standard.string(forKey: Self.activeKey),
-              let id = UUID(uuidString: stored),
-              workbooks.contains(where: { $0.id == id }) else {
+        guard let stored = defaults.string(forKey: Self.activeKey),
+            let id = UUID(uuidString: stored),
+            workbooks.contains(where: { $0.id == id })
+        else {
             return
         }
         activeWorkbookID = id
@@ -39,18 +63,16 @@ final class WorkbookStore: ObservableObject {
     // MARK: - Persistence
 
     private var fileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let folder = base.appendingPathComponent(Bundle.main.bundleIdentifier ?? "PDFViewer", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: folder.path) {
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: storageDirectory.path) {
+            try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
         }
-        return folder.appendingPathComponent("workbooks.json", isDirectory: false)
+        return storageDirectory.appendingPathComponent("workbooks.json", isDirectory: false)
     }
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([Workbook].self, from: data) else {
+            let decoded = try? JSONDecoder().decode([Workbook].self, from: data)
+        else {
             return
         }
         workbooks = decoded
@@ -94,7 +116,7 @@ final class WorkbookStore: ObservableObject {
     func delete(_ workbook: Workbook) {
         workbooks.removeAll { $0.id == workbook.id }
         if activeWorkbookID == workbook.id {
-            activeWorkbookID = nil
+            selectWorkbook(nil)
         }
         scheduleSave()
     }
@@ -209,7 +231,7 @@ final class WorkbookStore: ObservableObject {
         guard !ids.isEmpty else { return }
         workbooks.removeAll { ids.contains($0.id) }
         if let active = activeWorkbookID, ids.contains(active) {
-            activeWorkbookID = nil
+            selectWorkbook(nil)
         }
         scheduleSave()
     }
@@ -318,7 +340,8 @@ final class WorkbookStore: ObservableObject {
         container.insert(contentsOf: filtered, at: at)
     }
 
-    private func extractItems(_ ids: Set<UUID>, from folders: inout [WorkbookFolder], into moving: inout [WorkbookItem]) {
+    private func extractItems(_ ids: Set<UUID>, from folders: inout [WorkbookFolder], into moving: inout [WorkbookItem])
+    {
         for index in folders.indices {
             var keep: [WorkbookItem] = []
             for item in folders[index].items {
@@ -382,7 +405,8 @@ final class WorkbookStore: ObservableObject {
             if isDirectory.boolValue {
                 let files = Self.files(in: url)
                 guard !files.isEmpty else { continue }
-                let target = addFolder(named: url.lastPathComponent, to: workbookID, parentFolderID: folderID) ?? folderID
+                let target =
+                    addFolder(named: url.lastPathComponent, to: workbookID, parentFolderID: folderID) ?? folderID
                 add(makeItems(for: files), to: workbookID, folderID: target)
             } else {
                 looseFiles.append(url)
@@ -395,11 +419,13 @@ final class WorkbookStore: ObservableObject {
     }
 
     private static func files(in directory: URL) -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             return []
         }
 

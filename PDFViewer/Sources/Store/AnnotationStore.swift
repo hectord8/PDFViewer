@@ -13,9 +13,11 @@ enum AnnotationStore {
     private static var pendingSave: DispatchWorkItem?
 
     static var folderURL: URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let documents =
+            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        let folder = documents
+        let folder =
+            documents
             .appendingPathComponent("PDFViewer", isDirectory: true)
             .appendingPathComponent("Annotations", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -24,7 +26,8 @@ enum AnnotationStore {
 
     static func load(pdfPath: String, title: String) -> [Int: String] {
         guard let data = try? Data(contentsOf: fileURL(pdfPath: pdfPath, title: title)),
-              let file = try? JSONDecoder().decode(File.self, from: data) else {
+            let file = try? JSONDecoder().decode(File.self, from: data)
+        else {
             return [:]
         }
         var result: [Int: String] = [:]
@@ -74,9 +77,9 @@ enum AnnotationStore {
     }
 
     private static func shortHash(_ string: String) -> String {
-        var hash: UInt64 = 1469598103934665603
+        var hash: UInt64 = 1_469_598_103_934_665_603
         for byte in string.utf8 {
-            hash = (hash ^ UInt64(byte)) &* 1099511628211
+            hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211
         }
         return String(format: "%08x", UInt32(truncatingIfNeeded: hash))
     }

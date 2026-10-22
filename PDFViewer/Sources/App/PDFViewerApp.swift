@@ -64,7 +64,9 @@ struct PDFViewerApp: App {
                             Menu("Add to Workbook") {
                                 ForEach(workbooks.workbooks) { workbook in
                                     Button(workbook.name) {
-                                        workbooks.add(workbooks.makeItem(kind: .deck, title: deck.title, url: deck.url), to: workbook.id)
+                                        workbooks.add(
+                                            workbooks.makeItem(kind: .deck, title: deck.title, url: deck.url),
+                                            to: workbook.id)
                                     }
                                 }
                             }
@@ -100,7 +102,9 @@ struct PDFViewerApp: App {
                             Menu("Add to Workbook") {
                                 ForEach(workbooks.workbooks) { workbook in
                                     Button(workbook.name) {
-                                        workbooks.add(workbooks.makeItem(kind: .summary, title: summary.title, url: summary.url), to: workbook.id)
+                                        workbooks.add(
+                                            workbooks.makeItem(kind: .summary, title: summary.title, url: summary.url),
+                                            to: workbook.id)
                                     }
                                 }
                             }
@@ -136,7 +140,9 @@ struct PDFViewerApp: App {
                             Menu("Add to Workbook") {
                                 ForEach(workbooks.workbooks) { workbook in
                                     Button(workbook.name) {
-                                        workbooks.add(workbooks.makeItem(kind: .quiz, title: quiz.title, url: quiz.url), to: workbook.id)
+                                        workbooks.add(
+                                            workbooks.makeItem(kind: .quiz, title: quiz.title, url: quiz.url),
+                                            to: workbook.id)
                                     }
                                 }
                             }

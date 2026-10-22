@@ -1,5 +1,5 @@
-import SwiftUI
 import PDFKit
+import SwiftUI
 
 struct PDFViewerPane: View {
     @ObservedObject var tab: PDFDocumentTab

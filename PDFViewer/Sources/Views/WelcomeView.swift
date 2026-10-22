@@ -76,9 +76,13 @@ struct WelcomeView: View {
     private var featureRow: some View {
         LazyVGrid(columns: columns, spacing: 12) {
             feature(icon: "books.vertical", title: "Workbooks", text: "Group lectures, papers and generated material.")
-            feature(icon: "bubble.left.and.bubble.right", title: "Workbook Assistant", text: "Ask across the whole workbook and see sources.")
+            feature(
+                icon: "bubble.left.and.bubble.right", title: "Workbook Assistant",
+                text: "Ask across the whole workbook and see sources.")
             feature(icon: "text.bubble", title: "Annotate", text: "AI notes beside each page, saved with the PDF.")
-            feature(icon: "rectangle.on.rectangle", title: "Study", text: "Quizzes, flashcards and summaries from your documents.")
+            feature(
+                icon: "rectangle.on.rectangle", title: "Study",
+                text: "Quizzes, flashcards and summaries from your documents.")
         }
     }
 
