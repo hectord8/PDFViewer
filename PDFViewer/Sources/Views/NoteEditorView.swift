@@ -3,6 +3,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NoteEditorView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @ObservedObject var note: NoteTab
 
@@ -13,6 +17,7 @@ struct NoteEditorView: View {
             RichTextEditorView(text: $note.text, onChanged: { note.markChanged() })
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .hotReload()
     }
 
     private var header: some View {

@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct FlashcardView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @ObservedObject var tab: FlashcardTab
     @State private var keyMonitor: Any?
 
@@ -23,6 +27,7 @@ struct FlashcardView: View {
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { installKeyMonitor() }
         .onDisappear { removeKeyMonitor() }
+        .hotReload()
     }
 
     // MARK: - Hotkeys (H = know, G = still learning, F = don't know, Space = reveal)

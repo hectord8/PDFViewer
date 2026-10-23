@@ -3,6 +3,10 @@ import SwiftUI
 /// A secondary tab strip for the active workbook, showing only the workbook's
 /// files that are currently open. Clicking a tab focuses its existing tab.
 struct WorkbookTabBar: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var workbooks: WorkbookStore
 
@@ -50,6 +54,7 @@ struct WorkbookTabBar: View {
             .buttonStyle(.plain)
             .help("Close the workbook tabs")
         }
+        .hotReload()
     }
 
     private struct Entry {

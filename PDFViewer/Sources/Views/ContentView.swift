@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct ContentView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
     @EnvironmentObject private var workbooks: WorkbookStore
@@ -83,6 +87,7 @@ struct ContentView: View {
         } message: { message in
             Text(message)
         }
+        .hotReload()
     }
 
     private var activeWorkbook: Workbook? {
@@ -303,6 +308,10 @@ struct ContentView: View {
 /// A PDF on the left and an editable note on the right, sharing the draggable
 /// split divider.
 private struct NoteSplitLayout: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     let pdf: PDFDocumentTab
     let note: NoteTab
@@ -331,6 +340,7 @@ private struct NoteSplitLayout: View {
             }
             .coordinateSpace(name: "split")
         }
+        .hotReload()
     }
 
     private func divider(available: CGFloat) -> some View {
@@ -355,6 +365,10 @@ private struct NoteSplitLayout: View {
 }
 
 private struct PanelResizeHandle: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     enum Side {
         case leading
         case trailing
@@ -399,10 +413,15 @@ private struct PanelResizeHandle: View {
                     onEnd()
                 }
         )
+        .hotReload()
     }
 }
 
 private struct SplitLayout: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     let primary: PDFDocumentTab
     let secondary: PDFDocumentTab
@@ -431,6 +450,7 @@ private struct SplitLayout: View {
             }
             .coordinateSpace(name: "split")
         }
+        .hotReload()
     }
 
     private func divider(available: CGFloat) -> some View {

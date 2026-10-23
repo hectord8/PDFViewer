@@ -23,6 +23,7 @@ final class WorkbookStore: ObservableObject {
     private let defaults: UserDefaults
     private let storageDirectory: URL
     private var saveWorkItem: DispatchWorkItem?
+    private var terminationObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard, storageDirectory: URL? = nil) {
         self.defaults = defaults
@@ -35,13 +36,31 @@ final class WorkbookStore: ObservableObject {
             self.storageDirectory = base.appendingPathComponent(
                 Bundle.main.bundleIdentifier ?? "PDFViewer", isDirectory: true)
         }
+
+        try? FileManager.default.createDirectory(at: self.storageDirectory, withIntermediateDirectories: true)
         load()
         restoreActiveWorkbook()
+
+        // The save is debounced, so flush any pending change when the app quits.
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.saveNow()
+        }
+    }
+
+    deinit {
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
     }
 
     /// Selects the workbook shown in the tab strip. `nil` clears the selection;
     /// an unknown id is ignored. This is the single writer of `activeWorkbookID`.
     func selectWorkbook(_ id: UUID?) {
+        guard activeWorkbookID != id else { return }
         guard let id else {
             activeWorkbookID = nil
             return
@@ -63,19 +82,20 @@ final class WorkbookStore: ObservableObject {
     // MARK: - Persistence
 
     private var fileURL: URL {
-        if !FileManager.default.fileExists(atPath: storageDirectory.path) {
-            try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-        }
-        return storageDirectory.appendingPathComponent("workbooks.json", isDirectory: false)
+        storageDirectory.appendingPathComponent("workbooks.json", isDirectory: false)
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-            let decoded = try? JSONDecoder().decode([Workbook].self, from: data)
-        else {
-            return
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        do {
+            workbooks = try JSONDecoder().decode([Workbook].self, from: data)
+        } catch {
+            NSLog("PDFViewer: could not decode workbooks: \(error.localizedDescription)")
+            // Keep the unreadable file so the next save doesn't destroy it.
+            let backup = storageDirectory.appendingPathComponent(
+                "workbooks.corrupt-\(Int(Date().timeIntervalSince1970)).json")
+            try? FileManager.default.copyItem(at: fileURL, to: backup)
         }
-        workbooks = decoded
     }
 
     private func scheduleSave() {
@@ -89,6 +109,7 @@ final class WorkbookStore: ObservableObject {
         saveWorkItem?.cancel()
         saveWorkItem = nil
         do {
+            try FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(workbooks).write(to: fileURL, options: .atomic)
@@ -114,8 +135,13 @@ final class WorkbookStore: ObservableObject {
     }
 
     func delete(_ workbook: Workbook) {
-        workbooks.removeAll { $0.id == workbook.id }
-        if activeWorkbookID == workbook.id {
+        deleteWorkbooks([workbook.id])
+    }
+
+    func deleteWorkbooks(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        workbooks.removeAll { ids.contains($0.id) }
+        if let active = activeWorkbookID, ids.contains(active) {
             selectWorkbook(nil)
         }
         scheduleSave()
@@ -146,15 +172,62 @@ final class WorkbookStore: ObservableObject {
     }
 
     func renameFolder(_ folderID: UUID, in workbookID: UUID, to name: String) {
-        guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
-        _ = withFolder(folderID, in: &workbooks[index].folders) { folder in
-            folder.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+            let index = workbooks.firstIndex(where: { $0.id == workbookID })
+        else { return }
+
+        let found = withFolder(folderID, in: &workbooks[index].folders) { folder in
+            folder.name = trimmed
         }
-        scheduleSave()
+        if found { scheduleSave() }
     }
 
     func deleteFolder(_ folderID: UUID, from workbookID: UUID) {
         deleteFolders([folderID], from: workbookID)
+    }
+
+    func deleteFolders(_ ids: Set<UUID>, from workbookID: UUID) {
+        guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
+        _ = removeFolders(ids, from: &workbooks[index].folders)
+        scheduleSave()
+    }
+
+    /// Moves folders to another workbook, into a folder, or to a new position.
+    /// All validation happens before anything is mutated, and the result is
+    /// committed in one step, so a rejected move never loses folders.
+    func moveFolders(_ ids: Set<UUID>, from source: UUID, to target: UUID, folderID: UUID?, index: Int?) {
+        guard !ids.isEmpty,
+            let sourceIndex = workbooks.firstIndex(where: { $0.id == source }),
+            let targetIndex = workbooks.firstIndex(where: { $0.id == target })
+        else { return }
+
+        // Reject dropping a folder into itself or one of its own descendants.
+        if let folderID,
+            isInsideMoved(folderID, ids: ids, in: workbooks[sourceIndex].folders)
+        {
+            return
+        }
+
+        var updated = workbooks
+        let moving = removeFolders(ids, from: &updated[sourceIndex].folders)
+        guard !moving.isEmpty else { return }
+
+        if let folderID {
+            var inserted = false
+            _ = withFolder(folderID, in: &updated[targetIndex].folders) { folder in
+                insertFolders(moving, into: &folder.folders, at: index)
+                inserted = true
+            }
+            if !inserted {
+                insertFolders(moving, into: &updated[targetIndex].folders, at: index)
+            }
+        } else {
+            insertFolders(moving, into: &updated[targetIndex].folders, at: index)
+        }
+
+        workbooks = updated
+        scheduleSave()
     }
 
     // MARK: - Items
@@ -163,14 +236,18 @@ final class WorkbookStore: ObservableObject {
         guard let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
 
         if let folderID {
+            var folderFound = false
             var added = false
             _ = withFolder(folderID, in: &workbooks[index].folders) { folder in
+                folderFound = true
                 guard !folder.items.contains(where: { $0.path == item.path }) else { return }
                 folder.items.append(item)
                 added = true
             }
-            if added {
-                scheduleSave()
+            // Only fall back to the workbook root when the folder doesn't exist;
+            // a duplicate inside an existing folder is simply skipped.
+            if folderFound {
+                if added { scheduleSave() }
                 return
             }
         }
@@ -186,6 +263,14 @@ final class WorkbookStore: ObservableObject {
 
     func remove(_ item: WorkbookItem, from workbookID: UUID) {
         removeItems([item.id], from: workbookID)
+    }
+
+    func removeItems(_ ids: Set<UUID>, from workbookID: UUID) {
+        guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
+        workbooks[index].items.removeAll { ids.contains($0.id) }
+        var removed: [WorkbookItem] = []
+        extractItems(ids, from: &workbooks[index].folders, into: &removed)
+        scheduleSave()
     }
 
     /// Updates an item's title/path (used after renaming the file on disk).
@@ -210,91 +295,47 @@ final class WorkbookStore: ObservableObject {
             return false
         }
 
-        if update(&workbooks[index].items) {
-            scheduleSave()
-            return
-        }
-        if updateFolders(&workbooks[index].folders) {
+        if update(&workbooks[index].items) || updateFolders(&workbooks[index].folders) {
             scheduleSave()
         }
-    }
-
-    func removeItems(_ ids: Set<UUID>, from workbookID: UUID) {
-        guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
-        workbooks[index].items.removeAll { ids.contains($0.id) }
-        var discarded: [WorkbookItem] = []
-        extractItems(ids, from: &workbooks[index].folders, into: &discarded)
-        scheduleSave()
-    }
-
-    func deleteWorkbooks(_ ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
-        workbooks.removeAll { ids.contains($0.id) }
-        if let active = activeWorkbookID, ids.contains(active) {
-            selectWorkbook(nil)
-        }
-        scheduleSave()
-    }
-
-    /// Moves folders to another workbook, into a folder, or to a new position.
-    func moveFolders(_ ids: Set<UUID>, from source: UUID, to target: UUID, folderID: UUID?, index: Int?) {
-        guard !ids.isEmpty, let sourceIndex = workbooks.firstIndex(where: { $0.id == source }) else { return }
-        guard !(ids.contains(where: { $0 == folderID })) else { return }
-
-        let moving = removeFolders(ids, from: &workbooks[sourceIndex].folders)
-        guard !moving.isEmpty else { return }
-        if let folderID, moving.contains(where: { containsFolder(folderID, in: [$0]) }) { return }
-
-        guard let targetIndex = workbooks.firstIndex(where: { $0.id == target }) else { return }
-
-        if let folderID {
-            var inserted = false
-            _ = withFolder(folderID, in: &workbooks[targetIndex].folders) { folder in
-                insertFolders(moving, into: &folder.folders, at: index)
-                inserted = true
-            }
-            if !inserted {
-                insertFolders(moving, into: &workbooks[targetIndex].folders, at: index)
-            }
-        } else {
-            insertFolders(moving, into: &workbooks[targetIndex].folders, at: index)
-        }
-        scheduleSave()
-    }
-
-    func deleteFolders(_ ids: Set<UUID>, from workbookID: UUID) {
-        guard !ids.isEmpty, let index = workbooks.firstIndex(where: { $0.id == workbookID }) else { return }
-        _ = removeFolders(ids, from: &workbooks[index].folders)
-        scheduleSave()
     }
 
     /// Moves items into another container (workbook or folder). `index` inserts
-    /// at a precise spot within that container; `nil` appends.
+    /// at a precise spot within that container; `nil` appends. Items whose path
+    /// already exists in the destination are merged into the existing entry.
+    /// Both workbooks are validated up front and the result is committed in
+    /// one step, so a failed move never drops items.
     func moveItems(from source: UUID, ids: Set<UUID>, to target: UUID, folderID: UUID?, index: Int? = nil) {
-        guard !ids.isEmpty, let sourceIndex = workbooks.firstIndex(where: { $0.id == source }) else { return }
+        guard !ids.isEmpty,
+            let sourceIndex = workbooks.firstIndex(where: { $0.id == source }),
+            let targetIndex = workbooks.firstIndex(where: { $0.id == target })
+        else { return }
+
+        var updated = workbooks
 
         var moving: [WorkbookItem] = []
         var topLevel: [WorkbookItem] = []
-        for item in workbooks[sourceIndex].items {
+        for item in updated[sourceIndex].items {
             if ids.contains(item.id) { moving.append(item) } else { topLevel.append(item) }
         }
-        workbooks[sourceIndex].items = topLevel
-        extractItems(ids, from: &workbooks[sourceIndex].folders, into: &moving)
-
-        guard let targetIndex = workbooks.firstIndex(where: { $0.id == target }) else { return }
+        updated[sourceIndex].items = topLevel
+        extractItems(ids, from: &updated[sourceIndex].folders, into: &moving)
+        guard !moving.isEmpty else { return }
 
         if let folderID {
             var inserted = false
-            _ = withFolder(folderID, in: &workbooks[targetIndex].folders) { folder in
+            _ = withFolder(folderID, in: &updated[targetIndex].folders) { folder in
                 folder.items = insertItems(moving, into: folder.items, at: index)
                 inserted = true
             }
             if !inserted {
-                workbooks[targetIndex].items = insertItems(moving, into: workbooks[targetIndex].items, at: index)
+                updated[targetIndex].items = insertItems(moving, into: updated[targetIndex].items, at: index)
             }
         } else {
-            workbooks[targetIndex].items = insertItems(moving, into: workbooks[targetIndex].items, at: index)
+            updated[targetIndex].items = insertItems(moving, into: updated[targetIndex].items, at: index)
         }
+
+        workbooks = updated
         scheduleSave()
     }
 
@@ -312,6 +353,23 @@ final class WorkbookStore: ObservableObject {
                 return true
             }
             if withFolder(id, in: &folders[index].folders, body) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// True if `target` is one of `ids`, or lives inside a folder that is.
+    private func isInsideMoved(
+        _ target: UUID,
+        ids: Set<UUID>,
+        in folders: [WorkbookFolder],
+        ancestorMoved: Bool = false
+    ) -> Bool {
+        for folder in folders {
+            let moved = ancestorMoved || ids.contains(folder.id)
+            if folder.id == target { return moved }
+            if isInsideMoved(target, ids: ids, in: folder.folders, ancestorMoved: moved) {
                 return true
             }
         }
@@ -360,14 +418,7 @@ final class WorkbookStore: ObservableObject {
         return result
     }
 
-    private func containsFolder(_ id: UUID, in folders: [WorkbookFolder]) -> Bool {
-        for folder in folders {
-            if folder.id == id || containsFolder(id, in: folder.folders) {
-                return true
-            }
-        }
-        return false
-    }
+    // MARK: - Item creation and import
 
     func url(for item: WorkbookItem) -> URL? {
         SessionStore.resolve(path: item.path, bookmark: item.bookmark)
@@ -435,10 +486,12 @@ final class WorkbookStore: ObservableObject {
                 result.append(url)
             }
         }
+        // Enumeration order isn't guaranteed; sort so imports are deterministic.
+        result.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         return result
     }
 
-    // MARK: - Helpers
+    // MARK: - Naming helpers
 
     private func uniqueFolderName(_ desired: String, among siblings: [WorkbookFolder]) -> String {
         let trimmed = desired.trimmingCharacters(in: .whitespacesAndNewlines)

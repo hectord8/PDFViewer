@@ -78,6 +78,10 @@ final class LibraryNode: NSObject {
 }
 
 /// A VS Code–style library tree with multi-select and precise drag/drop.
+///
+/// NOTE: `Workbook`, `WorkbookFolder`, `WorkbookItem` and `WorkbookItemKind`
+/// must conform to `Equatable` so the coordinator can tell whether the data
+/// actually changed (as opposed to just the active workbook selection).
 struct LibraryOutlineView: NSViewRepresentable {
     @ObservedObject var store: WorkbookStore
 
@@ -141,6 +145,11 @@ struct LibraryOutlineView: NSViewRepresentable {
         private var reloadAfterDrag = false
         private var isApplyingSelection = false
 
+        /// The workbook data the outline currently displays. Lets us skip
+        /// reloads triggered only by selection changes (e.g. `activeWorkbookID`),
+        /// which previously rebuilt the tree in the middle of a click.
+        private var lastWorkbooks: [Workbook]?
+
         private static let expansionKey = "libraryExpandedIDs"
 
         init(store: WorkbookStore) {
@@ -151,6 +160,12 @@ struct LibraryOutlineView: NSViewRepresentable {
             )
         }
 
+        #if HOT_RELOAD
+            @objc func injected() {
+                reloadNow()
+            }
+        #endif
+
         private func persistExpansion() {
             UserDefaults.standard.set(expandedIDs.map(\.uuidString), forKey: Self.expansionKey)
         }
@@ -159,15 +174,19 @@ struct LibraryOutlineView: NSViewRepresentable {
 
         /// Coalesces reloads and runs them after the current update, so we never
         /// rebuild the outline view from inside its own delegate callbacks.
+        /// Does nothing when only selection state changed and the data is the same.
         func reload() {
             guard !reloadScheduled else { return }
             reloadScheduled = true
             DispatchQueue.main.async { [weak self] in
-                self?.reloadScheduled = false
-                self?.performReload()
+                guard let self else { return }
+                self.reloadScheduled = false
+                guard self.lastWorkbooks != self.store.workbooks else { return }
+                self.performReload()
             }
         }
 
+        /// Forces a rebuild regardless of whether the data changed.
         func reloadNow() {
             reloadScheduled = false
             performReload()
@@ -178,6 +197,8 @@ struct LibraryOutlineView: NSViewRepresentable {
                 reloadAfterDrag = true
                 return
             }
+
+            lastWorkbooks = store.workbooks
 
             captureExpansion()
             persistExpansion()
@@ -191,16 +212,27 @@ struct LibraryOutlineView: NSViewRepresentable {
             }
 
             guard let outlineView else { return }
+
             let selected = Set(
-                (0..<outlineView.numberOfSelectedRows).compactMap { outlineView.item(atRow: $0) as? LibraryNode }.map(
-                    \.id))
+                outlineView.selectedRowIndexes
+                    .compactMap { outlineView.item(atRow: $0) as? LibraryNode }
+                    .map(\.id)
+            )
+
+            // Keep the scroll position across the reload.
+            let clipView = outlineView.enclosingScrollView?.contentView
+            let savedOrigin = clipView?.bounds.origin
+
             outlineView.reloadData()
             restoreExpansion()
             applySelection(prior: selected)
+
+            if let clipView, let savedOrigin {
+                clipView.scroll(to: savedOrigin)
+                outlineView.enclosingScrollView?.reflectScrolledClipView(clipView)
+            }
         }
 
-        /// Records which nodes are currently expanded straight from the outline
-        /// view (before the tree is rebuilt), so reloading preserves them.
         private func makeNodes(folders: [WorkbookFolder], items: [WorkbookItem], workbookID: UUID) -> [LibraryNode] {
             var nodes = folders.map { makeFolderNode($0, workbookID: workbookID) }
             nodes.append(contentsOf: items.map { LibraryNode(id: $0.id, kind: .item($0, workbookID: workbookID)) })
@@ -215,6 +247,8 @@ struct LibraryOutlineView: NSViewRepresentable {
             )
         }
 
+        /// Records which nodes are currently expanded straight from the outline
+        /// view (before the tree is rebuilt), so reloading preserves them.
         private func captureExpansion() {
             guard let outlineView else { return }
             func walk(_ node: LibraryNode) {
@@ -246,24 +280,16 @@ struct LibraryOutlineView: NSViewRepresentable {
             }
         }
 
-        /// Reapplies selection after a reload. Item/folder selection is kept from
-        /// the prior snapshot, but workbook rows are driven by `activeWorkbookID`
-        /// (the single source of truth) so a stale selection can never snap the
-        /// active workbook back to a different one.
+        /// Reapplies the prior selection after a reload. Only rows that were
+        /// selected before are restored; nothing is force-selected, so a reload
+        /// can never move the highlight to a different workbook.
         private func applySelection(prior: Set<UUID>) {
-            guard let outlineView else { return }
+            guard let outlineView, !prior.isEmpty else { return }
             var indexes = IndexSet()
             for row in 0..<outlineView.numberOfRows {
                 guard let node = outlineView.item(atRow: row) as? LibraryNode else { continue }
-                switch node.kind {
-                case .workbook:
-                    if node.id == store.activeWorkbookID {
-                        indexes.insert(row)
-                    }
-                case .folder, .item:
-                    if prior.contains(node.id) {
-                        indexes.insert(row)
-                    }
+                if prior.contains(node.id) {
+                    indexes.insert(row)
                 }
             }
             guard !indexes.isEmpty else { return }
@@ -333,15 +359,20 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         func outlineViewSelectionDidChange(_ notification: Notification) {
-            guard let outlineView, !outlineView.selectedRowIndexes.isEmpty else { return }
-            guard !isApplyingSelection, let anchorRow = outlineView.selectedRowIndexes.max() else { return }
-            guard let node = outlineView.item(atRow: anchorRow) as? LibraryNode else { return }
+            guard let outlineView, !isApplyingSelection,
+                let anchorRow = outlineView.selectedRowIndexes.max(),
+                let node = outlineView.item(atRow: anchorRow) as? LibraryNode
+            else { return }
+
             let workbookID: UUID
             switch node.kind {
             case .workbook(let workbook): workbookID = workbook.id
             case .folder(_, let id): workbookID = id
             case .item(_, let id): workbookID = id
             }
+
+            // Avoid redundant store writes; they publish and trigger SwiftUI updates.
+            guard workbookID != store.activeWorkbookID else { return }
             store.selectWorkbook(workbookID)
         }
 
@@ -594,13 +625,14 @@ struct LibraryOutlineView: NSViewRepresentable {
         }
 
         @objc func handleDoubleClick() {
-            guard let outlineView else { return }
-            let row = outlineView.clickedRow
-            guard let node = node(at: row), case .item(let item, _) = node.kind else {
-                outlineView.expandItem(node(at: row))
-                return
+            guard let outlineView, let node = node(at: outlineView.clickedRow) else { return }
+            if case .item(let item, _) = node.kind {
+                open(item)
+            } else if outlineView.isItemExpanded(node) {
+                outlineView.collapseItem(node)
+            } else {
+                outlineView.expandItem(node)
             }
-            open(item)
         }
 
         private func open(_ item: WorkbookItem) {
@@ -658,6 +690,7 @@ struct LibraryOutlineView: NSViewRepresentable {
                 add(menu, "Rename…", #selector(menuRename))
                 add(menu, "Delete", #selector(menuDelete))
                 menuItemsContext = (workbook, nil)
+                menuWorkbookID = workbook.id
             case .folder(let folder, let workbookID):
                 add(menu, "Add…", #selector(menuAdd))
                 add(menu, "Add Current Document", #selector(menuAddCurrent))
@@ -666,7 +699,7 @@ struct LibraryOutlineView: NSViewRepresentable {
                 add(menu, "Delete Folder", #selector(menuDeleteFolder))
                 menuItemsContext = (nil, folder.id)
                 menuWorkbookID = workbookID
-            case .item:
+            case .item(_, let workbookID):
                 add(menu, "Open", #selector(menuOpen))
                 add(menu, "Show in Finder", #selector(menuReveal))
                 add(menu, "Copy Path", #selector(menuCopyPath))
@@ -674,6 +707,8 @@ struct LibraryOutlineView: NSViewRepresentable {
                 add(menu, "Duplicate", #selector(menuDuplicateItem))
                 menu.addItem(.separator())
                 add(menu, "Remove from Workbook", #selector(menuRemove))
+                menuItemsContext = (nil, nil)
+                menuWorkbookID = workbookID
             }
             return menu
         }
@@ -815,6 +850,7 @@ struct LibraryOutlineView: NSViewRepresentable {
             else { return }
             if let id = store.addFolder(named: name, to: workbook.id) {
                 expandedIDs.insert(id)
+                persistExpansion()
             }
         }
 
@@ -855,9 +891,8 @@ struct LibraryOutlineView: NSViewRepresentable {
 
         @objc private func menuRenameFolder() {
             guard let workbookID = menuWorkbookID, let folderID = menuItemsContext?.folderID,
-                let folder = store.workbooks.first(where: { $0.id == workbookID })?.folders.first(where: {
-                    $0.id == folderID
-                }),
+                let folder = Self.findFolder(
+                    folderID, in: store.workbooks.first(where: { $0.id == workbookID })?.folders ?? []),
                 let name = prompt("Rename Folder", "Enter a new name.", folder.name)
             else { return }
             store.renameFolder(folderID, in: workbookID, to: name)
@@ -866,6 +901,15 @@ struct LibraryOutlineView: NSViewRepresentable {
         @objc private func menuDeleteFolder() {
             guard let workbookID = menuWorkbookID, let folderID = menuItemsContext?.folderID else { return }
             store.deleteFolder(folderID, from: workbookID)
+        }
+
+        /// Finds a folder at any depth (the old lookup only searched top-level folders).
+        private static func findFolder(_ id: UUID, in folders: [WorkbookFolder]) -> WorkbookFolder? {
+            for folder in folders {
+                if folder.id == id { return folder }
+                if let found = findFolder(id, in: folder.folders) { return found }
+            }
+            return nil
         }
 
         private func prompt(_ title: String, _ message: String, _ initial: String) -> String? {

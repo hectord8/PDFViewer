@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct SummaryView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @ObservedObject var tab: SummaryTab
     @State private var copied = false
 
@@ -17,6 +21,7 @@ struct SummaryView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .hotReload()
     }
 
     private var header: some View {

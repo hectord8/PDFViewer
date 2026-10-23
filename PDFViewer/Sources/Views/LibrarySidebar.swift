@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct LibrarySidebar: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var workbooks: WorkbookStore
 
@@ -13,13 +17,14 @@ struct LibrarySidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+        .hotReload()
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "books.vertical")
                 .foregroundStyle(.secondary)
-            Text("Library")
+            Text("WorkBooks")
                 .font(.headline)
 
             Spacer()

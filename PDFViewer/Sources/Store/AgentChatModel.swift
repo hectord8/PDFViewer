@@ -92,6 +92,7 @@ final class AgentChatModel: ObservableObject {
     @Published var modelOverride: String {
         didSet { UserDefaults.standard.set(modelOverride, forKey: Self.modelKey) }
     }
+    @Published private(set) var availableModels: [String] = []
     @Published var flashcardFolder: String {
         didSet {
             UserDefaults.standard.set(flashcardFolder, forKey: Self.flashcardFolderKey)
@@ -130,6 +131,9 @@ final class AgentChatModel: ObservableObject {
     private var client: OpenCodeClient?
     private var serverProcess: Process?
     private var serverLogPipe: Pipe?
+    private var serverPort: Int?
+    private var serverUsername: String?
+    private var serverPassword: String?
 
     private var history: [String] = []
     private var historyCursor = 0
@@ -142,7 +146,7 @@ final class AgentChatModel: ObservableObject {
         return formatter
     }()
 
-    private static let defaultModel = "opencode/space-bunny-free"
+    private static let defaultModel = ""
 
     private init() {
         serverAddress = UserDefaults.standard.string(forKey: Self.addressKey) ?? "http://127.0.0.1:4096"
@@ -198,9 +202,10 @@ final class AgentChatModel: ObservableObject {
             client = candidate
             status = .connected(version: health.version)
             log(health.version.map { "Connected — opencode \($0)" } ?? "Connected.")
+            await refreshModels()
         } catch {
             let unreachable = (error as? OpenCodeClient.ClientError)?.kind == .unreachable
-            if unreachable, Self.isLocal(url), serverProcess?.isRunning != true {
+            if unreachable, Self.isLocal(url) {
                 log("No server responded — starting one…")
                 await startServer()
                 return
@@ -226,17 +231,61 @@ final class AgentChatModel: ObservableObject {
             client = probe
             status = .connected(version: health.version)
             log("Test OK — healthy: \(health.healthy), version: \(health.version ?? "unknown")")
+            await refreshModels()
         } catch {
             log("Test failed — \(Self.describe(error))")
         }
     }
 
+    /// Validates the saved model against the server's provider list and switches
+    /// to the server's configured model when the saved one no longer exists.
+    private func refreshModels() async {
+        guard let client else { return }
+        do {
+            let models = try await client.availableModels()
+            guard !models.isEmpty else { return }
+            availableModels = models.sorted()
+
+            let value = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, !models.contains(value) else { return }
+
+            let configured = try? await client.configuredModel()
+            let provider = value.split(separator: "/").first.map(String.init)
+            let sameProvider = provider.flatMap { prefix in
+                models.first { $0.hasPrefix(prefix + "/") }
+            }
+            let fallback =
+                configured.flatMap { models.contains($0) ? $0 : nil }
+                ?? sameProvider
+                ?? models.first
+            if let fallback {
+                modelOverride = fallback
+                log("Model “\(value)” isn’t available — using \(fallback).")
+            }
+        } catch {
+            // The model list is advisory; a failure here shouldn't block chat.
+        }
+    }
+
     /// Starts `opencode serve` using a locally installed binary, then connects.
     func startServer() async {
+        let url = Self.normalizedURL(from: serverAddress)
+        let port = Self.port(from: serverAddress)
+        let credentials = url.map { Self.credentials(for: $0) } ?? (username: nil, password: nil)
+        let addressMatches =
+            serverPort == port
+            && serverUsername == credentials.username
+            && serverPassword == credentials.password
+
         if serverProcess?.isRunning == true {
-            log("Server already running; connecting…")
-            await connect()
-            return
+            if addressMatches {
+                log("Server already running; connecting…")
+                if await probeQuietly() { return }
+                log("Server didn’t respond — restarting…")
+            } else {
+                log("Restarting opencode on port \(port)…")
+            }
+            stopServer()
         }
 
         guard let binary = Self.locateOpenCodeBinary() else {
@@ -245,7 +294,6 @@ final class AgentChatModel: ObservableObject {
             return
         }
 
-        let port = Self.port(from: serverAddress)
         status = .connecting
         log("Starting \(binary.path) serve --port \(port)…")
 
@@ -257,6 +305,18 @@ final class AgentChatModel: ObservableObject {
             "--hostname", "127.0.0.1",
             "--print-logs",
         ]
+
+        var environment = ProcessInfo.processInfo.environment
+        if let username = credentials.username {
+            environment["OPENCODE_SERVER_USERNAME"] = username
+        }
+        if let password = credentials.password {
+            environment["OPENCODE_SERVER_PASSWORD"] = password
+        }
+        process.environment = environment
+        serverPort = port
+        serverUsername = credentials.username
+        serverPassword = credentials.password
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -297,6 +357,9 @@ final class AgentChatModel: ObservableObject {
             serverProcess.terminate()
         }
         serverProcess = nil
+        serverPort = nil
+        serverUsername = nil
+        serverPassword = nil
     }
 
     func clearLogs() {
@@ -327,6 +390,7 @@ final class AgentChatModel: ObservableObject {
             client = candidate
             status = .connected(version: health.version)
             log(health.version.map { "Connected — opencode \($0)" } ?? "Connected.")
+            await refreshModels()
             return true
         } catch {
             return false
@@ -387,6 +451,10 @@ final class AgentChatModel: ObservableObject {
         if Self.looksLikeQuiz(prompt) {
             await performQuiz(prompt: prompt, context: attached, client: client)
             return
+        }
+
+        if availableModels.isEmpty {
+            await refreshModels()
         }
 
         let modelName = modelOverride.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -98,6 +98,10 @@ final class PageGeometry: ObservableObject {
 /// A column of per-page notes that sits beside the PDF and scrolls with it:
 /// each note is a box aligned to the vertical position of its page.
 struct PageNotesPanel: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
     @ObservedObject var tab: PDFDocumentTab
@@ -154,6 +158,7 @@ struct PageNotesPanel: View {
         }
         .onAppear { geometry.attach(tab.pdfView) }
         .onDisappear { geometry.detach() }
+        .hotReload()
     }
 
     private func noteBox(page: Int, note: String) -> some View {

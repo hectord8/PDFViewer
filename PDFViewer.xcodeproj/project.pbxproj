@@ -52,6 +52,9 @@
 		BB0000000000000000000024 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* SessionTests.swift */; };
 		BB0000000000000000000025 /* WorkbookStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* WorkbookStoreTests.swift */; };
 		BB0000000000000000000026 /* WorkbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000016 /* WorkbookTests.swift */; };
+		CC0000000000000000000005 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = CC0000000000000000000003 /* InjectionNext */; };
+		CC0000000000000000000006 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = CC0000000000000000000004 /* Inject */; };
+		DD0000000000000000000002 /* HotReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000001 /* HotReload.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -112,6 +115,7 @@
 		BB0000000000000000000014 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		BB0000000000000000000015 /* WorkbookStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbookStoreTests.swift; sourceTree = "<group>"; };
 		BB0000000000000000000016 /* WorkbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbookTests.swift; sourceTree = "<group>"; };
+		DD0000000000000000000001 /* HotReload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotReload.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,6 +123,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC0000000000000000000005 /* InjectionNext in Frameworks */,
+				CC0000000000000000000006 /* Inject in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +229,7 @@
 				AA00000000000000000000CE /* WorkbookChatView.swift */,
 				AA00000000000000000000D2 /* TodoListView.swift */,
 				AA00000000000000000000D6 /* NoteEditorView.swift */,
+				DD0000000000000000000001 /* HotReload.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -273,6 +280,10 @@
 			dependencies = (
 			);
 			name = PDFViewer;
+			packageProductDependencies = (
+				CC0000000000000000000003 /* InjectionNext */,
+				CC0000000000000000000004 /* Inject */,
+			);
 			productName = PDFViewer;
 			productReference = F5BF48AA40CAD7891EB709FC /* PDFViewer.app */;
 			productType = "com.apple.product-type.application";
@@ -323,6 +334,10 @@
 			);
 			mainGroup = 518DA81DB9B99529C0C0AEBE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CC0000000000000000000001 /* XCRemoteSwiftPackageReference "InjectionNext" */,
+				CC0000000000000000000002 /* XCRemoteSwiftPackageReference "Inject" */,
+			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 2F3A6B1E78F896718625FF06 /* Products */;
 			projectDirPath = "";
@@ -395,6 +410,7 @@
 				AA00000000000000000000CF /* WorkbookChatView.swift in Sources */,
 				AA00000000000000000000E2 /* TodoListView.swift in Sources */,
 				AA00000000000000000000E6 /* NoteEditorView.swift in Sources */,
+				DD0000000000000000000002 /* HotReload.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,10 +570,12 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				COMPILATION_CACHE_ENABLE_CACHING = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
+				EMIT_FRONTEND_COMMAND_LINES = YES;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PDFViewer/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -565,8 +583,14 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-Xlinker",
+					"-interposable",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.PDFViewer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) HOT_RELOAD";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -687,6 +711,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CC0000000000000000000001 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/johnno1962/InjectionNext";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.1;
+			};
+		};
+		CC0000000000000000000002 /* XCRemoteSwiftPackageReference "Inject" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/krzysztofzablocki/Inject";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CC0000000000000000000003 /* InjectionNext */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CC0000000000000000000001 /* XCRemoteSwiftPackageReference "InjectionNext" */;
+			productName = InjectionNext;
+		};
+		CC0000000000000000000004 /* Inject */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CC0000000000000000000002 /* XCRemoteSwiftPackageReference "Inject" */;
+			productName = Inject;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
 }

@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct AgentChatPanel: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var model: AgentChatModel
 
@@ -33,6 +37,7 @@ struct AgentChatPanel: View {
             }
         }
         .background(shortcutButtons)
+        .hotReload()
     }
 
     /// Invisible buttons that provide Esc (stop) and ⌘⇧C (copy last reply).
@@ -661,6 +666,10 @@ private struct ViewportKey: PreferenceKey {
 /// A single message with hover actions (copy, regenerate, insert into note,
 /// delete) and selectable text.
 private struct ChatBubble: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let message: AgentChatModel.ChatMessage
     var canInsertIntoNote: Bool
     var onRegenerate: () -> Void
@@ -720,6 +729,7 @@ private struct ChatBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .onHover { hovering = $0 }
+        .hotReload()
     }
 
     private var actionRow: some View {
@@ -901,6 +911,10 @@ final class CommandLineTextView: NSTextView {
 
 /// Renders markdown, honoring inline formatting and fenced code blocks.
 struct MarkdownText: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let text: String
 
     var body: some View {
@@ -919,6 +933,7 @@ struct MarkdownText: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .hotReload()
     }
 
     private static func attributed(_ string: String) -> AttributedString {
@@ -930,6 +945,10 @@ struct MarkdownText: View {
 }
 
 private struct CodeBlock: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let code: String
     let language: String?
 
@@ -979,6 +998,7 @@ private struct CodeBlock: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         )
+        .hotReload()
     }
 }
 

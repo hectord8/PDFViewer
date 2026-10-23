@@ -2,6 +2,10 @@ import PDFKit
 import SwiftUI
 
 struct PDFViewerPane: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @ObservedObject var tab: PDFDocumentTab
     @EnvironmentObject private var store: LibraryStore
     var isFocused: Bool = true
@@ -32,6 +36,7 @@ struct PDFViewerPane: View {
             tab.pdfView.layoutDocumentView()
             tab.finishRestoringIfNeeded()
         }
+        .hotReload()
     }
 }
 

@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct TodoListView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @ObservedObject private var store = TodoStore.shared
     @State private var newText = ""
     @FocusState private var focused: Bool
@@ -71,6 +75,7 @@ struct TodoListView: View {
         }
         .frame(minWidth: 260, minHeight: 300)
         .onAppear { focused = true }
+        .hotReload()
     }
 
     private func add() {
@@ -81,6 +86,10 @@ struct TodoListView: View {
 }
 
 private struct TodoRow: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let item: TodoItem
     @ObservedObject var store: TodoStore
 
@@ -107,5 +116,6 @@ private struct TodoRow: View {
                 store.remove(item)
             }
         }
+        .hotReload()
     }
 }

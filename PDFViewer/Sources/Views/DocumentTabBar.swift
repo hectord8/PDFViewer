@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct DocumentTabBar: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
     @EnvironmentObject private var workbooks: WorkbookStore
@@ -224,6 +228,7 @@ struct DocumentTabBar: View {
             }
             .disabled(!store.canReopenClosedTab)
         }
+        .hotReload()
     }
 
     private func tabButton(for tab: PDFDocumentTab) -> some View {

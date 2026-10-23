@@ -147,6 +147,33 @@ final class OpenCodeClient {
 
     // MARK: - Plumbing
 
+    /// All `provider/model` identifiers the server currently exposes.
+    func availableModels() async throws -> [String] {
+        let data = try await sendRaw("GET", "/config/providers", body: nil, timeout: 15)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let providers = object["providers"] as? [[String: Any]]
+        else {
+            return []
+        }
+        return providers.flatMap { provider -> [String] in
+            guard let id = provider["id"] as? String,
+                let models = provider["models"] as? [String: Any]
+            else {
+                return []
+            }
+            return models.keys.map { "\(id)/\($0)" }
+        }
+    }
+
+    /// The model configured for the server, if any.
+    func configuredModel() async throws -> String? {
+        let data = try await sendRaw("GET", "/config", body: nil, timeout: 15)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object["model"] as? String
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let data = try await sendRaw("GET", path, body: nil, timeout: 30)
         return try decode(data)

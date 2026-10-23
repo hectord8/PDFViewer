@@ -9,7 +9,7 @@ enum WorkbookItemKind: String, Codable {
     case file
 }
 
-struct WorkbookItem: Codable, Identifiable {
+struct WorkbookItem: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var kind: WorkbookItemKind
     var title: String
@@ -19,7 +19,7 @@ struct WorkbookItem: Codable, Identifiable {
 
 /// A named group of items inside a workbook, used to separate different
 /// kinds of material (e.g. lectures vs past papers). Folders can nest.
-struct WorkbookFolder: Codable, Identifiable {
+struct WorkbookFolder: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     var items: [WorkbookItem] = []
@@ -59,7 +59,7 @@ struct WorkbookFolder: Codable, Identifiable {
     }
 }
 
-struct Workbook: Codable, Identifiable {
+struct Workbook: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     var items: [WorkbookItem] = []

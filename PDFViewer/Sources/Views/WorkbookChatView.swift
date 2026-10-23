@@ -3,6 +3,10 @@ import SwiftUI
 /// A full-area assistant that answers using the whole workbook and cites where
 /// it found the information.
 struct WorkbookChatView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var agent: AgentChatModel
     @EnvironmentObject private var workbooks: WorkbookStore
@@ -16,6 +20,7 @@ struct WorkbookChatView: View {
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .hotReload()
     }
 
     private var activeWorkbook: Workbook? {

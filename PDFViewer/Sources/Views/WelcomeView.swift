@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct WelcomeView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var store: LibraryStore
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -18,6 +22,7 @@ struct WelcomeView: View {
             .frame(maxWidth: .infinity)
         }
         .background(background)
+        .hotReload()
     }
 
     private var header: some View {

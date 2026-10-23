@@ -126,6 +126,39 @@ swift test --scratch-path /tmp/PDFViewer-swift-test
 
 You can also open `Package.swift` in Xcode to run the same Swift Testing suite.
 
+### Hot reload (optional)
+
+The app is wired for [Inject](https://github.com/krzysztofzablocki/Inject) through
+[InjectionNext](https://github.com/johnno1962/InjectionNext). It only activates
+in Xcode **Debug** builds (the `HOT_RELOAD` compilation condition), so
+`swift test`, `check.sh`, and `build-app.sh` are unaffected.
+
+One-time setup:
+
+1. Download the latest `InjectionNext.app` release and move it to `/Applications`.
+2. Quit Xcode, launch InjectionNext, and use **Launch Xcode** from its menu.
+
+Then run the app from Xcode in Debug. The InjectionNext menu-bar icon turns
+orange when the app connects. Edit a SwiftUI `body`, press ⌘S, and the view
+updates in place.
+
+If it does not connect:
+
+- Launch InjectionNext from Finder/Applications, not a terminal.
+- Quit Xcode first, then start it with InjectionNext's **Launch Xcode** menu.
+- The scheme sets `INJECTION_PROJECT_ROOT`, so file-watch mode also works if
+  you build once in Xcode while InjectionNext is running.
+
+Limitations:
+
+- Injection cannot add/remove stored properties or change signatures; rebuild
+  and relaunch for those changes.
+- AppKit-backed views (`PDFKitView`, `MathTextView`, `RichTextEditorView`,
+  `ThumbnailSidebar`) may not redraw themselves. The library tree refreshes via
+  `Coordinator.injected()`.
+- Keep `ENABLE_HARDENED_RUNTIME = NO` and `ENABLE_APP_SANDBOX = NO` in the Debug
+  configuration.
+
 ### Setting the bundle identifier
 
 The project ships with `com.example.PDFViewer`. Make it yours:

@@ -163,6 +163,10 @@ struct MathTextView: NSViewRepresentable {
 /// Text that renders markdown with LaTeX math when present, otherwise falls
 /// back to the lightweight native renderer.
 struct MathOrMarkdown: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let markdown: String
     @State private var height: CGFloat = 18
 
@@ -170,8 +174,10 @@ struct MathOrMarkdown: View {
         if MathTextSupport.containsMath(markdown) {
             MathTextView(markdown: markdown, height: $height)
                 .frame(height: max(height, 1))
+                .hotReload()
         } else {
             MarkdownText(text: markdown)
+                .hotReload()
         }
     }
 }
@@ -179,6 +185,10 @@ struct MathOrMarkdown: View {
 /// Text that renders LaTeX math when present, otherwise plain (optionally
 /// centred) text at a chosen size.
 struct MathOrText: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     let markdown: String
     var fontSize: CGFloat = 14
     var alignment: TextAlignment = .leading
@@ -188,12 +198,14 @@ struct MathOrText: View {
         if MathTextSupport.containsMath(markdown) {
             MathTextView(markdown: markdown, fontSize: fontSize, height: $height)
                 .frame(height: max(height, 1))
+                .hotReload()
         } else {
             Text(markdown)
                 .font(.system(size: fontSize))
                 .multilineTextAlignment(alignment)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
+                .hotReload()
         }
     }
 }

@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct FindBar: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @ObservedObject var tab: PDFDocumentTab
     let onClose: () -> Void
 
@@ -53,5 +57,6 @@ struct FindBar: View {
         .background(.bar)
         .onAppear { fieldFocused = true }
         .onExitCommand(perform: onClose)
+        .hotReload()
     }
 }

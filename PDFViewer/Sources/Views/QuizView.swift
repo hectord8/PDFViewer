@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct QuizView: View {
+    #if HOT_RELOAD
+        @ObserveInjection private var inject
+    #endif
+
     @EnvironmentObject private var agent: AgentChatModel
     @ObservedObject var tab: QuizTab
 
@@ -22,6 +26,7 @@ struct QuizView: View {
             footer
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .hotReload()
     }
 
     private var header: some View {
