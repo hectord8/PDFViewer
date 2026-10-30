@@ -97,4 +97,17 @@ struct Workbook: Codable, Identifiable, Equatable {
         if items.contains(where: { $0.path == path }) { return true }
         return folders.contains { $0.containsPath(path) }
     }
+
+    /// Every item path in the workbook, including nested folders.
+    var allPaths: Set<String> {
+        var paths = Set(items.map(\.path))
+        func walk(_ folders: [WorkbookFolder]) {
+            for folder in folders {
+                paths.formUnion(folder.items.map(\.path))
+                walk(folder.folders)
+            }
+        }
+        walk(folders)
+        return paths
+    }
 }

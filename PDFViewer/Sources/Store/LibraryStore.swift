@@ -9,7 +9,12 @@ struct ClosedTab {
     let scale: Double
 }
 
-final class LibraryStore: ObservableObject {
+private struct WorkbookSession: Codable {
+    var paths: [String]
+    var activePath: String?
+}
+
+@MainActor final class LibraryStore: ObservableObject {
     static let shared = LibraryStore()
 
     @Published private(set) var tabs: [PDFDocumentTab] = []
@@ -26,10 +31,10 @@ final class LibraryStore: ObservableObject {
     @Published var showAgentPanel = false
     @Published var showAnnotations = false
     @Published var showLibrary = false
-    @Published var showWorkbookChat = false
     @Published var errorMessage: String?
 
     @Published var secondaryTabID: UUID?
+    @Published var isSplitPickerVisible = false
     @Published var focusedPane: Pane = .primary
     @Published var splitFraction: Double = 0.5
 
@@ -58,10 +63,14 @@ final class LibraryStore: ObservableObject {
     @Published var selectedNoteID: UUID?
     @Published var secondaryNoteID: UUID?
 
+    @Published private(set) var lectureTabs: [LectureTab] = []
+    @Published var selectedLectureID: UUID?
+
     private let workbooks = WorkbookStore.shared
 
     @Published private var findBarTabID: UUID?
 
+    private static let workbookSessionsKey = "workbookSessions"
     private var didRestoreSession = false
     private var saveWorkItem: DispatchWorkItem?
 
@@ -97,6 +106,11 @@ final class LibraryStore: ObservableObject {
         return notes.first { $0.id == selectedNoteID }
     }
 
+    var selectedLectureTab: LectureTab? {
+        guard let selectedLectureID else { return nil }
+        return lectureTabs.first { $0.id == selectedLectureID }
+    }
+
     var secondaryNoteTab: NoteTab? {
         guard let secondaryNoteID else { return nil }
         return notes.first { $0.id == secondaryNoteID }
@@ -106,7 +120,10 @@ final class LibraryStore: ObservableObject {
     var isFlashcardActive: Bool { selectedFlashcardTab != nil }
     var isSummaryActive: Bool { selectedSummaryTab != nil }
     var isNoteActive: Bool { selectedNoteTab != nil && secondaryNoteTab == nil }
-    var isGeneratedTabActive: Bool { isQuizActive || isFlashcardActive || isSummaryActive || isNoteActive }
+    var isLectureActive: Bool { selectedLectureTab != nil }
+    var isGeneratedTabActive: Bool {
+        isQuizActive || isFlashcardActive || isSummaryActive || isNoteActive || isLectureActive
+    }
 
     var activeTab: PDFDocumentTab? {
         if isSplit, focusedPane == .secondary, let secondaryTab { return secondaryTab }
@@ -196,6 +213,88 @@ final class LibraryStore: ObservableObject {
     private func configure(_ tab: PDFDocumentTab) {
         tab.onDirty = { [weak self] in self?.scheduleSessionSave() }
         tab.onFocus = { [weak self] in self?.focusPane(containing: tab) }
+        tab.onSelectionCommand = { [weak self, weak tab] command, text, pageIndex in
+            guard let self, let tab else { return }
+            self.handleSelectionCommand(command, text: text, pageIndex: pageIndex, in: tab)
+        }
+    }
+
+    // MARK: - Selection actions
+
+    /// Right-click actions on text selected in a PDF.
+    func handleSelectionCommand(
+        _ command: PDFDocumentTab.SelectionCommand,
+        text: String,
+        pageIndex: Int,
+        in tab: PDFDocumentTab
+    ) {
+        let agent = AgentChatModel.shared
+
+        switch command {
+        case .ask:
+            agent.attachSelection(text, documentTitle: tab.title, pageIndex: pageIndex)
+            showAssistant()
+            agent.focusInputRequest += 1
+
+        case .explain:
+            agent.attachSelection(text, documentTitle: tab.title, pageIndex: pageIndex)
+            showAssistant()
+            let pageContext = AgentChatModel.context(for: tab, scope: .currentPage)
+            Task {
+                await agent.ask(
+                    "Explain the selected passage in plain language, using the surrounding page for context.",
+                    context: pageContext
+                )
+            }
+
+        case .flashcards:
+            agent.attachSelection(text, documentTitle: tab.title, pageIndex: pageIndex)
+            showAssistant()
+            Task { await agent.ask("Make flashcards from the selected passage.", context: nil) }
+
+        case .addToNote:
+            addSelectionToNote(text, pageIndex: pageIndex, from: tab)
+        }
+    }
+
+    /// Appends a quote (with its source) to the note beside the PDF, opening
+    /// a note for this document in split view if there isn't one yet.
+    private func addSelectionToNote(_ text: String, pageIndex: Int, from tab: PDFDocumentTab) {
+        let title = "Notes – \(tab.title)"
+        let note: NoteTab
+        if let open = secondaryNoteTab {
+            note = open
+        } else if let existing = notes.first(where: { $0.title == title }) {
+            note = existing
+        } else {
+            note = NoteTab(title: title, text: NotesStore.emptyText(), fileURL: nil)
+            note.onFirstSave = { [weak self] note in self?.addNoteToActiveWorkbook(note) }
+            notes.append(note)
+        }
+
+        let combined = NSMutableAttributedString(attributedString: note.text)
+        if combined.length > 0 {
+            combined.append(NSAttributedString(string: "\n\n"))
+        }
+        combined.append(
+            NSAttributedString(
+                string: "“\(text)”\n",
+                attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.textColor]
+            )
+        )
+        combined.append(
+            NSAttributedString(
+                string: "— \(tab.title), p. \(pageIndex + 1)",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+            )
+        )
+        note.text = combined
+        note.markChanged()
+
+        if secondaryNoteID != note.id {
+            selectedTabID = tab.id
+            splitNoteWithPDF(note)
+        }
     }
 
     /// Files dropped onto the window. Each provider resolves asynchronously, so we
@@ -237,6 +336,7 @@ final class LibraryStore: ObservableObject {
         selectedFlashcardID = nil
         selectedSummaryID = nil
         selectedNoteID = nil
+        selectedLectureID = nil
         if isSplit {
             if tab.id == selectedTabID {
                 focusedPane = .primary
@@ -278,6 +378,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedFlashcardID = nil
         selectedSummaryID = nil
+        selectedLectureID = nil
         selectedQuizID = tab.id
     }
 
@@ -286,6 +387,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedFlashcardID = nil
         selectedSummaryID = nil
+        selectedLectureID = nil
         selectedQuizID = tab.id
     }
 
@@ -315,6 +417,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
         selectedSummaryID = nil
+        selectedLectureID = nil
         selectedFlashcardID = tab.id
     }
 
@@ -323,6 +426,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
         selectedSummaryID = nil
+        selectedLectureID = nil
         selectedFlashcardID = tab.id
     }
 
@@ -350,6 +454,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
         selectedFlashcardID = nil
+        selectedLectureID = nil
         selectedSummaryID = tab.id
     }
 
@@ -358,6 +463,7 @@ final class LibraryStore: ObservableObject {
         collapseSplitForGeneratedTab()
         selectedQuizID = nil
         selectedFlashcardID = nil
+        selectedLectureID = nil
         selectedSummaryID = tab.id
     }
 
@@ -386,6 +492,25 @@ final class LibraryStore: ObservableObject {
         note.onFirstSave = { [weak self] note in self?.addNoteToActiveWorkbook(note) }
         notes.append(note)
         selectNote(note)
+        return note
+    }
+
+    /// Creates a note from generated text (e.g. a lecture transcript), saves it,
+    /// and optionally files it into the active workbook through the normal
+    /// first-save path.
+    @discardableResult
+    func createNote(
+        title: String,
+        text: NSAttributedString,
+        addToActiveWorkbook: Bool = true
+    ) -> NoteTab {
+        let note = NoteTab(title: title, text: text, fileURL: nil)
+        if addToActiveWorkbook {
+            note.onFirstSave = { [weak self] note in self?.addNoteToActiveWorkbook(note) }
+        }
+        notes.append(note)
+        selectNote(note)
+        note.saveNow()
         return note
     }
 
@@ -428,10 +553,12 @@ final class LibraryStore: ObservableObject {
             secondaryTabID = nil
             focusedPane = .primary
         }
+        isSplitPickerVisible = false
         secondaryNoteID = nil
         selectedQuizID = nil
         selectedFlashcardID = nil
         selectedSummaryID = nil
+        selectedLectureID = nil
         selectedNoteID = note.id
     }
 
@@ -449,6 +576,7 @@ final class LibraryStore: ObservableObject {
     /// Shows this note beside the currently-selected PDF.
     func splitNoteWithPDF(_ note: NoteTab) {
         guard let pdf = selectedTab else { return }
+        isSplitPickerVisible = false
         secondaryTabID = nil
         selectedTabID = pdf.id
         selectedNoteID = nil
@@ -456,7 +584,41 @@ final class LibraryStore: ObservableObject {
         focusedPane = .secondary
     }
 
+    // MARK: - Lecture Portal
+
+    func openLecturePortal() {
+        if lectureTabs.isEmpty {
+            lectureTabs = [LectureTab()]
+        }
+        collapseSplitForGeneratedTab()
+        secondaryNoteID = nil
+        selectedQuizID = nil
+        selectedFlashcardID = nil
+        selectedSummaryID = nil
+        selectedNoteID = nil
+        selectedLectureID = lectureTabs[0].id
+    }
+
+    func selectLectureTab(_ tab: LectureTab) {
+        guard lectureTabs.contains(where: { $0.id == tab.id }) else { return }
+        collapseSplitForGeneratedTab()
+        secondaryNoteID = nil
+        selectedQuizID = nil
+        selectedFlashcardID = nil
+        selectedSummaryID = nil
+        selectedNoteID = nil
+        selectedLectureID = tab.id
+    }
+
+    func closeLectureTab(_ tab: LectureTab) {
+        lectureTabs.removeAll { $0.id == tab.id }
+        if selectedLectureID == tab.id {
+            selectedLectureID = lectureTabs.first?.id
+        }
+    }
+
     private func collapseSplitForGeneratedTab() {
+        isSplitPickerVisible = false
         if isSplit {
             secondaryTabID = nil
             focusedPane = .primary
@@ -466,25 +628,65 @@ final class LibraryStore: ObservableObject {
     // MARK: - Split view
 
     func split(with tab: PDFDocumentTab) {
-        guard tabs.count > 1 else { return }
+        select(tab)
+        beginSplitPicker()
+    }
 
-        if tab.id == selectedTabID {
-            guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-            let other = tabs[(index + 1) % tabs.count]
-            guard other.id != tab.id else { return }
-            secondaryTabID = other.id
-            focusedPane = .primary
-        } else {
-            secondaryTabID = tab.id
-            focusedPane = .secondary
-        }
+    func beginSplitPicker() {
+        guard selectedTab != nil, !isGeneratedTabActive else { return }
+        secondaryTabID = nil
+        secondaryNoteID = nil
+        isSplitPickerVisible = true
+        focusedPane = .primary
         scheduleSessionSave()
     }
 
+    func cancelSplitPicker() {
+        guard isSplitPickerVisible else { return }
+        isSplitPickerVisible = false
+        focusedPane = .primary
+    }
+
+    func chooseSecondaryTab(_ tab: PDFDocumentTab) {
+        guard tab.id != selectedTabID else { return }
+        secondaryTabID = tab.id
+        secondaryNoteID = nil
+        isSplitPickerVisible = false
+        focusedPane = .secondary
+        scheduleSessionSave()
+    }
+
+    func chooseSecondaryNote(_ note: NoteTab) {
+        guard selectedTab != nil else { return }
+        selectedNoteID = nil
+        secondaryNoteID = note.id
+        secondaryTabID = nil
+        isSplitPickerVisible = false
+        focusedPane = .secondary
+        scheduleSessionSave()
+    }
+
+    func openRecentAsSecondary(_ recent: ClosedTab) {
+        if let existing = tabs.first(where: { $0.url.path == recent.url.path }) {
+            chooseSecondaryTab(existing)
+        } else if let tab = PDFDocumentTab(url: recent.url) {
+            configure(tab)
+            tab.restore(pageIndex: recent.pageIndex, zoomMode: recent.zoomMode, scale: recent.scale)
+            tabs.append(tab)
+            chooseSecondaryTab(tab)
+        } else {
+            errorMessage = "“\(recent.url.lastPathComponent)” could not be reopened."
+        }
+        recentlyClosed.removeAll { $0.url.path == recent.url.path }
+    }
+
     func collapseSplit() {
-        guard secondaryTabID != nil || secondaryNoteID != nil else { return }
+        guard secondaryTabID != nil || secondaryNoteID != nil || isSplitPickerVisible else {
+            return
+        }
         secondaryTabID = nil
         secondaryNoteID = nil
+        isSplitPickerVisible = false
         focusedPane = .primary
         scheduleSessionSave()
     }
@@ -706,7 +908,23 @@ final class LibraryStore: ObservableObject {
     }
 
     func toggleAgentPanel() {
-        showAgentPanel.toggle()
+        if showAgentPanel {
+            showAgentPanel = false
+        } else {
+            showAssistant()
+        }
+    }
+
+    /// Opens the assistant panel, optionally switching what it answers about.
+    /// With no document open, a document-only scope falls back to the workbook.
+    func showAssistant(scope: AgentChatModel.ContextScope? = nil) {
+        let agent = AgentChatModel.shared
+        if let scope {
+            agent.contextScope = scope
+        } else if activeTab == nil, agent.contextScope == .currentPage || agent.contextScope == .wholeDocument {
+            agent.contextScope = .workbook
+        }
+        showAgentPanel = true
     }
 
     func toggleAnnotations() {
@@ -715,10 +933,6 @@ final class LibraryStore: ObservableObject {
 
     func toggleLibrary() {
         showLibrary.toggle()
-    }
-
-    func toggleWorkbookChat() {
-        showWorkbookChat.toggle()
     }
 
     func zoomIn() {
@@ -754,6 +968,166 @@ final class LibraryStore: ObservableObject {
     }
 
     // MARK: - Session persistence
+
+    // MARK: - Workbook sessions
+
+    /// Called when the selected workbook changes: remember the old workbook's
+    /// open files, then reopen/select the new workbook's files.
+    func workbookChanged(from oldID: UUID?, to newID: UUID?) {
+        if let oldID {
+            saveWorkbookSession(oldID)
+        }
+        if let newID, newID != oldID {
+            activateWorkbook(newID)
+        }
+    }
+
+    /// Restores the files that were open the last time this workbook was active.
+    /// On first entry, opens the workbook's PDFs.
+    func activateWorkbook(_ id: UUID?) {
+        guard let id, let workbook = workbooks.workbooks.first(where: { $0.id == id }) else {
+            return
+        }
+
+        let sessions = loadWorkbookSessions()
+        if let session = sessions[id.uuidString], !session.paths.isEmpty {
+            for path in session.paths where !isOpen(path: path) {
+                if let item = allItems(in: workbook).first(where: { $0.path == path }) {
+                    openWorkbookItem(item)
+                }
+            }
+            if let active = session.activePath, isOpen(path: active) {
+                selectPath(active)
+            } else if let first = session.paths.first(where: { isOpen(path: $0) }) {
+                selectPath(first)
+            }
+        } else {
+            let pdfs = allItems(in: workbook).filter { $0.kind == .pdf }
+            let urls = pdfs.compactMap { workbooks.url(for: $0) }
+            if !urls.isEmpty {
+                open(urls: urls)
+            }
+        }
+    }
+
+    private func saveWorkbookSession(_ id: UUID) {
+        guard let workbook = workbooks.workbooks.first(where: { $0.id == id }) else { return }
+
+        var sessions = loadWorkbookSessions()
+        sessions[id.uuidString] = WorkbookSession(
+            paths: openPaths(in: workbook),
+            activePath: activeFilePath.flatMap { workbook.containsPath($0) ? $0 : nil }
+        )
+        saveWorkbookSessions(sessions)
+    }
+
+    private func openPaths(in workbook: Workbook) -> [String] {
+        let paths =
+            tabs.map(\.url.path)
+            + notes.compactMap(\.fileURL?.path)
+            + summaries.compactMap(\.fileURL?.path)
+            + flashcards.compactMap(\.deckURL?.path)
+            + quizzes.compactMap(\.fileURL?.path)
+        return paths.filter { workbook.containsPath($0) }
+    }
+
+    private var activeFilePath: String? {
+        if let note = selectedNoteTab { return note.fileURL?.path }
+        if let summary = selectedSummaryTab { return summary.fileURL?.path }
+        if let deck = selectedFlashcardTab { return deck.deckURL?.path }
+        if let quiz = selectedQuizTab { return quiz.fileURL?.path }
+        return activeTab?.url.path
+    }
+
+    private func isOpen(path: String) -> Bool {
+        tabs.contains { $0.url.path == path }
+            || notes.contains { $0.fileURL?.path == path }
+            || summaries.contains { $0.fileURL?.path == path }
+            || flashcards.contains { $0.deckURL?.path == path }
+            || quizzes.contains { $0.fileURL?.path == path }
+    }
+
+    private func selectPath(_ path: String) {
+        if let tab = tabs.first(where: { $0.url.path == path }) {
+            select(tab)
+        } else if let note = notes.first(where: { $0.fileURL?.path == path }) {
+            selectNote(note)
+        } else if let summary = summaries.first(where: { $0.fileURL?.path == path }) {
+            selectSummary(summary)
+        } else if let deck = flashcards.first(where: { $0.deckURL?.path == path }) {
+            selectFlashcard(deck)
+        } else if let quiz = quizzes.first(where: { $0.fileURL?.path == path }) {
+            selectQuiz(quiz)
+        }
+    }
+
+    private func allItems(in workbook: Workbook) -> [WorkbookItem] {
+        var items = workbook.items
+        func walk(_ folders: [WorkbookFolder]) {
+            for folder in folders {
+                items.append(contentsOf: folder.items)
+                walk(folder.folders)
+            }
+        }
+        walk(workbook.folders)
+        return items
+    }
+
+    private func openWorkbookItem(_ item: WorkbookItem) {
+        guard let url = workbooks.url(for: item) else { return }
+
+        switch item.kind {
+        case .pdf:
+            open(urls: [url])
+        case .note:
+            openNote(at: url)
+        case .summary:
+            let title = item.title
+            Task { @MainActor in
+                AgentChatModel.shared.openSavedSummary(
+                    AgentChatModel.SavedSummary(
+                        id: url.path,
+                        title: title,
+                        url: url,
+                        modified: .distantPast
+                    )
+                )
+            }
+        case .deck:
+            let title = item.title
+            Task { @MainActor in
+                AgentChatModel.shared.openSavedDeck(
+                    AgentChatModel.SavedDeck(
+                        id: url.path,
+                        title: title,
+                        url: url,
+                        cardCount: 0,
+                        modified: .distantPast
+                    )
+                )
+            }
+        case .quiz:
+            Task { @MainActor in
+                AgentChatModel.shared.openSavedQuiz(at: url)
+            }
+        case .file:
+            break
+        }
+    }
+
+    private func loadWorkbookSessions() -> [String: WorkbookSession] {
+        guard let data = UserDefaults.standard.data(forKey: Self.workbookSessionsKey),
+            let decoded = try? JSONDecoder().decode([String: WorkbookSession].self, from: data)
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func saveWorkbookSessions(_ sessions: [String: WorkbookSession]) {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        UserDefaults.standard.set(data, forKey: Self.workbookSessionsKey)
+    }
 
     func restoreSessionIfNeeded() {
         guard !didRestoreSession else { return }
@@ -825,6 +1199,10 @@ final class LibraryStore: ObservableObject {
     }
 
     private func writeSession() {
+        if let active = workbooks.activeWorkbookID {
+            saveWorkbookSession(active)
+        }
+
         let session = Session(
             showThumbnails: showThumbnails,
             selectedPath: selectedTab?.url.path,

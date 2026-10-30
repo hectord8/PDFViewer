@@ -38,7 +38,6 @@
 		AA00000000000000000000BF /* LibraryOutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000AF /* LibraryOutlineView.swift */; };
 		AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CA /* WorkbookTabBar.swift */; };
 		AA00000000000000000000CD /* AnnotationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CC /* AnnotationStore.swift */; };
-		AA00000000000000000000CF /* WorkbookChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CE /* WorkbookChatView.swift */; };
 		AA00000000000000000000E1 /* TodoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D1 /* TodoStore.swift */; };
 		AA00000000000000000000E2 /* TodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D2 /* TodoListView.swift */; };
 		AA00000000000000000000E3 /* TodoWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000D3 /* TodoWindowController.swift */; };
@@ -55,6 +54,23 @@
 		CC0000000000000000000005 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = CC0000000000000000000003 /* InjectionNext */; };
 		CC0000000000000000000006 /* Inject in Frameworks */ = {isa = PBXBuildFile; productRef = CC0000000000000000000004 /* Inject */; };
 		DD0000000000000000000002 /* HotReload.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000001 /* HotReload.swift */; };
+		EE0000000000000000000011 /* Lecture.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000001 /* Lecture.swift */; };
+		EE0000000000000000000012 /* LectureTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000002 /* LectureTab.swift */; };
+		EE0000000000000000000013 /* TranscriptCue.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000003 /* TranscriptCue.swift */; };
+		EE0000000000000000000014 /* LectureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000004 /* LectureStore.swift */; };
+		EE0000000000000000000015 /* LectureTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000005 /* LectureTranscriber.swift */; };
+		EE0000000000000000000016 /* LectureWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000006 /* LectureWebView.swift */; };
+		EE0000000000000000000017 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000007 /* TranscriptView.swift */; };
+		EE0000000000000000000018 /* LecturePortalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000008 /* LecturePortalView.swift */; };
+		FF0000000000000000000011 /* TranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0000000000000000000001 /* TranscriptTests.swift */; };
+		FF0000000000000000000012 /* LectureStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0000000000000000000002 /* LectureStoreTests.swift */; };
+		GG0000000000000000000011 /* SystemAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = GG0000000000000000000001 /* SystemAudioRecorder.swift */; };
+		GG0000000000000000000012 /* LectureTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = GG0000000000000000000002 /* LectureTranscriptionService.swift */; };
+		GG0000000000000000000013 /* LectureTranscriptionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = GG0000000000000000000003 /* LectureTranscriptionServiceTests.swift */; };
+		HH0000000000000000000011 /* LectureAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = HH0000000000000000000001 /* LectureAudioTests.swift */; };
+		II0000000000000000000011 /* SaveToWorkbookSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = II0000000000000000000001 /* SaveToWorkbookSheet.swift */; };
+		JJ0000000000000000000011 /* AIPromptWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = JJ0000000000000000000001 /* AIPromptWindowController.swift */; };
+		JJ0000000000000000000012 /* AIPromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = JJ0000000000000000000002 /* AIPromptView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,7 +116,6 @@
 		AA00000000000000000000AF /* LibraryOutlineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryOutlineView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CA /* WorkbookTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookTabBar.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000CC /* AnnotationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationStore.swift"; sourceTree = "<group>"; };
-		AA00000000000000000000CE /* WorkbookChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbookChatView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000D1 /* TodoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoStore.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000D2 /* TodoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoListView.swift"; sourceTree = "<group>"; };
 		AA00000000000000000000D3 /* TodoWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TodoWindowController.swift"; sourceTree = "<group>"; };
@@ -116,6 +131,23 @@
 		BB0000000000000000000015 /* WorkbookStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbookStoreTests.swift; sourceTree = "<group>"; };
 		BB0000000000000000000016 /* WorkbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbookTests.swift; sourceTree = "<group>"; };
 		DD0000000000000000000001 /* HotReload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotReload.swift; sourceTree = "<group>"; };
+		EE0000000000000000000001 /* Lecture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lecture.swift; sourceTree = "<group>"; };
+		EE0000000000000000000002 /* LectureTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureTab.swift; sourceTree = "<group>"; };
+		EE0000000000000000000003 /* TranscriptCue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCue.swift; sourceTree = "<group>"; };
+		EE0000000000000000000004 /* LectureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureStore.swift; sourceTree = "<group>"; };
+		EE0000000000000000000005 /* LectureTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureTranscriber.swift; sourceTree = "<group>"; };
+		EE0000000000000000000006 /* LectureWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureWebView.swift; sourceTree = "<group>"; };
+		EE0000000000000000000007 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
+		EE0000000000000000000008 /* LecturePortalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LecturePortalView.swift; sourceTree = "<group>"; };
+		FF0000000000000000000001 /* TranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptTests.swift; sourceTree = "<group>"; };
+		FF0000000000000000000002 /* LectureStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureStoreTests.swift; sourceTree = "<group>"; };
+		GG0000000000000000000001 /* SystemAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioRecorder.swift; sourceTree = "<group>"; };
+		GG0000000000000000000002 /* LectureTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureTranscriptionService.swift; sourceTree = "<group>"; };
+		GG0000000000000000000003 /* LectureTranscriptionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureTranscriptionServiceTests.swift; sourceTree = "<group>"; };
+		HH0000000000000000000001 /* LectureAudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureAudioTests.swift; sourceTree = "<group>"; };
+		II0000000000000000000001 /* SaveToWorkbookSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveToWorkbookSheet.swift; sourceTree = "<group>"; };
+		JJ0000000000000000000001 /* AIPromptWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPromptWindowController.swift; sourceTree = "<group>"; };
+		JJ0000000000000000000002 /* AIPromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPromptView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +206,7 @@
 				96F3106E4C8B9636B74195FA /* MainMenuTweaks.swift */,
 				552EE29EB6A3F934E6D559EC /* PDFViewerApp.swift */,
 				AA00000000000000000000D3 /* TodoWindowController.swift */,
+				JJ0000000000000000000001 /* AIPromptWindowController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -188,6 +221,9 @@
 				96A05779CB8F0BEEE2177EBA /* Session.swift */,
 				AA00000000000000000000A8 /* SummaryTab.swift */,
 				AA00000000000000000000AC /* Workbook.swift */,
+				EE0000000000000000000001 /* Lecture.swift */,
+				EE0000000000000000000002 /* LectureTab.swift */,
+				EE0000000000000000000003 /* TranscriptCue.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -203,6 +239,10 @@
 				DCDD3BDC4EA995D1A7CF5AF5 /* SessionStore.swift */,
 				AA00000000000000000000D1 /* TodoStore.swift */,
 				AA00000000000000000000AD /* WorkbookStore.swift */,
+				EE0000000000000000000004 /* LectureStore.swift */,
+				EE0000000000000000000005 /* LectureTranscriber.swift */,
+				GG0000000000000000000001 /* SystemAudioRecorder.swift */,
+				GG0000000000000000000002 /* LectureTranscriptionService.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -226,10 +266,14 @@
 				AF1D11E172DA03A366C2E27A /* ThumbnailSidebar.swift */,
 				0F38F7D9009CB391A159D308 /* WelcomeView.swift */,
 				AA00000000000000000000CA /* WorkbookTabBar.swift */,
-				AA00000000000000000000CE /* WorkbookChatView.swift */,
 				AA00000000000000000000D2 /* TodoListView.swift */,
 				AA00000000000000000000D6 /* NoteEditorView.swift */,
 				DD0000000000000000000001 /* HotReload.swift */,
+				EE0000000000000000000006 /* LectureWebView.swift */,
+				EE0000000000000000000007 /* TranscriptView.swift */,
+				EE0000000000000000000008 /* LecturePortalView.swift */,
+				II0000000000000000000001 /* SaveToWorkbookSheet.swift */,
+				JJ0000000000000000000002 /* AIPromptView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -260,6 +304,10 @@
 				BB0000000000000000000014 /* SessionTests.swift */,
 				BB0000000000000000000015 /* WorkbookStoreTests.swift */,
 				BB0000000000000000000016 /* WorkbookTests.swift */,
+				FF0000000000000000000001 /* TranscriptTests.swift */,
+				FF0000000000000000000002 /* LectureStoreTests.swift */,
+				GG0000000000000000000003 /* LectureTranscriptionServiceTests.swift */,
+				HH0000000000000000000001 /* LectureAudioTests.swift */,
 			);
 			path = Tests/PDFViewerTests;
 			sourceTree = "<group>";
@@ -407,10 +455,22 @@
 				B54C5B84F2CA52709E5C23B4 /* ThumbnailSidebar.swift in Sources */,
 				510138CC4BC0D429CF1D39E2 /* WelcomeView.swift in Sources */,
 				AA00000000000000000000CB /* WorkbookTabBar.swift in Sources */,
-				AA00000000000000000000CF /* WorkbookChatView.swift in Sources */,
 				AA00000000000000000000E2 /* TodoListView.swift in Sources */,
 				AA00000000000000000000E6 /* NoteEditorView.swift in Sources */,
 				DD0000000000000000000002 /* HotReload.swift in Sources */,
+				EE0000000000000000000011 /* Lecture.swift in Sources */,
+				EE0000000000000000000012 /* LectureTab.swift in Sources */,
+				EE0000000000000000000013 /* TranscriptCue.swift in Sources */,
+				EE0000000000000000000014 /* LectureStore.swift in Sources */,
+				EE0000000000000000000015 /* LectureTranscriber.swift in Sources */,
+				EE0000000000000000000016 /* LectureWebView.swift in Sources */,
+				EE0000000000000000000017 /* TranscriptView.swift in Sources */,
+				EE0000000000000000000018 /* LecturePortalView.swift in Sources */,
+				GG0000000000000000000011 /* SystemAudioRecorder.swift in Sources */,
+				GG0000000000000000000012 /* LectureTranscriptionService.swift in Sources */,
+				II0000000000000000000011 /* SaveToWorkbookSheet.swift in Sources */,
+				JJ0000000000000000000011 /* AIPromptWindowController.swift in Sources */,
+				JJ0000000000000000000012 /* AIPromptView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,6 +484,10 @@
 				BB0000000000000000000024 /* SessionTests.swift in Sources */,
 				BB0000000000000000000025 /* WorkbookStoreTests.swift in Sources */,
 				BB0000000000000000000026 /* WorkbookTests.swift in Sources */,
+				FF0000000000000000000011 /* TranscriptTests.swift in Sources */,
+				FF0000000000000000000012 /* LectureStoreTests.swift in Sources */,
+				GG0000000000000000000013 /* LectureTranscriptionServiceTests.swift in Sources */,
+				HH0000000000000000000011 /* LectureAudioTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

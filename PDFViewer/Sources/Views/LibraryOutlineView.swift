@@ -132,7 +132,7 @@ struct LibraryOutlineView: NSViewRepresentable {
         context.coordinator.reload()
     }
 
-    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+    @MainActor final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         static let dragType = NSPasteboard.PasteboardType("com.example.PDFViewer.workbookItems")
 
         let store: WorkbookStore

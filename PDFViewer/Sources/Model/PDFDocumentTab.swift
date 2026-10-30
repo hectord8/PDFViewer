@@ -6,6 +6,68 @@ enum ZoomMode: String, Codable {
     case fitWidth
 }
 
+/// One entry of a PDF's built-in table of contents.
+struct PDFOutlineNode: Identifiable {
+    /// Position in reading order, unique within one document.
+    let id: Int
+    let title: String
+    let pageIndex: Int?
+    let destination: PDFDestination?
+    let children: [PDFOutlineNode]?
+
+    static func build(from document: PDFDocument) -> [PDFOutlineNode] {
+        guard let root = document.outlineRoot else { return [] }
+        var counter = 0
+
+        func children(of item: PDFOutline) -> [PDFOutlineNode] {
+            var result: [PDFOutlineNode] = []
+            for index in 0..<item.numberOfChildren {
+                guard let child = item.child(at: index) else { continue }
+                let id = counter
+                counter += 1
+
+                let destination = child.destination ?? (child.action as? PDFActionGoTo)?.destination
+                var pageIndex: Int?
+                if let page = destination?.page {
+                    let found = document.index(for: page)
+                    if found >= 0, found < document.pageCount { pageIndex = found }
+                }
+
+                let label = child.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let nested = children(of: child)
+                result.append(
+                    PDFOutlineNode(
+                        id: id,
+                        title: label.isEmpty ? "Untitled" : label,
+                        pageIndex: pageIndex,
+                        destination: destination,
+                        children: nested.isEmpty ? nil : nested
+                    )
+                )
+            }
+            return result
+        }
+
+        return children(of: root)
+    }
+
+    /// The entry for the section containing `pageIndex`: the one starting
+    /// latest at or before that page (deepest entry wins a tie).
+    static func current(in nodes: [PDFOutlineNode], pageIndex: Int) -> Int? {
+        var best: (id: Int, page: Int)?
+        func visit(_ nodes: [PDFOutlineNode]) {
+            for node in nodes {
+                if let page = node.pageIndex, page <= pageIndex, page >= (best?.page ?? Int.min) {
+                    best = (node.id, page)
+                }
+                if let children = node.children { visit(children) }
+            }
+        }
+        visit(nodes)
+        return best?.id
+    }
+}
+
 /// One open PDF. Owns its own `PDFView` so that scroll position, zoom and the
 /// highlighted search hits survive switching tabs.
 final class PDFDocumentTab: ObservableObject, Identifiable {
@@ -24,15 +86,33 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
     @Published private(set) var selectedMatchIndex: Int = 0
 
     @Published var pageNotes: [Int: String] = [:] {
-        didSet { AnnotationStore.save(pageNotes, pdfPath: url.path, title: title) }
+        didSet { persistAnnotations() }
     }
+
+    /// Highlights and underlines, drawn on the in-memory document only.
+    @Published private(set) var highlights: [StoredHighlight] = []
+    private var highlightAnnotations: [UUID: [PDFAnnotation]] = [:]
+
+    /// Right-click actions on selected text that need the rest of the app
+    /// (the assistant, notes). Receives the text and its first page index.
+    var onSelectionCommand: ((SelectionCommand, String, Int) -> Void)?
     @Published var isAnnotatingPages = false
+
+    /// The document's table of contents, empty when it has none.
+    private(set) lazy var outline: [PDFOutlineNode] = PDFOutlineNode.build(from: document)
 
     /// Called whenever something worth persisting changed.
     var onDirty: (() -> Void)?
 
     /// Called when the user clicks into this tab's PDF, used to focus its pane.
     var onFocus: (() -> Void)?
+
+    enum SelectionCommand {
+        case ask
+        case explain
+        case flashcards
+        case addToNote
+    }
 
     private var pageObserver: NSObjectProtocol?
     private var searchWorkItem: DispatchWorkItem?
@@ -64,6 +144,14 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
         }
         view.onFocus = { [weak self] in
             self?.onFocus?()
+        }
+        view.contextMenuItems = { [weak self] point in
+            self?.contextMenuItems(at: point) ?? []
+        }
+
+        for highlight in AnnotationStore.loadHighlights(pdfPath: url.path, title: title) {
+            addAnnotations(for: highlight)
+            highlights.append(highlight)
         }
 
         pageObserver = NotificationCenter.default.addObserver(
@@ -101,6 +189,15 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
             pageIndex = index
         }
         onDirty?()
+    }
+
+    func go(to node: PDFOutlineNode) {
+        if let destination = node.destination, destination.page != nil {
+            pdfView.go(to: destination)
+            onDirty?()
+        } else if let index = node.pageIndex {
+            go(toPageIndex: index)
+        }
     }
 
     // MARK: - Zoom
@@ -210,6 +307,181 @@ final class PDFDocumentTab: ObservableObject, Identifiable {
         selectedMatchIndex = 0
         pdfView.highlightedSelections = nil
         pdfView.setCurrentSelection(nil, animate: false)
+    }
+
+    // MARK: - Highlights
+
+    private func persistAnnotations() {
+        AnnotationStore.save(pageNotes, highlights: highlights, pdfPath: url.path, title: title)
+    }
+
+    /// The page the current selection starts on, if there is one.
+    var selectionPageIndex: Int? {
+        guard let page = pdfView.currentSelection?.pages.first else { return nil }
+        let index = document.index(for: page)
+        return index >= 0 ? index : nil
+    }
+
+    /// The current selection, if it contains any real text.
+    var selectedText: String? {
+        guard let text = pdfView.currentSelection?.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !text.isEmpty
+        else { return nil }
+        return text
+    }
+
+    /// Highlights (or underlines) the current text selection. One stored
+    /// highlight is made per page the selection touches.
+    @discardableResult
+    func highlightSelection(color: HighlightColor = .yellow, style: HighlightStyle = .highlight) -> Bool {
+        guard let selection = pdfView.currentSelection, selectedText != nil else { return false }
+
+        let lines = selection.selectionsByLine()
+        var created: [StoredHighlight] = []
+
+        for page in selection.pages {
+            let pageIndex = document.index(for: page)
+            guard pageIndex >= 0 else { continue }
+
+            let pageLines = lines.filter { $0.pages.contains(page) }
+            let rects = pageLines.map { $0.bounds(for: page) }.filter { $0.width > 0.5 && $0.height > 0.5 }
+            guard !rects.isEmpty else { continue }
+
+            let text = pageLines.compactMap(\.string).joined(separator: " ")
+            created.append(
+                StoredHighlight(
+                    id: UUID(),
+                    page: pageIndex,
+                    rects: rects.map { [$0.origin.x, $0.origin.y, $0.width, $0.height].map { Double($0) } },
+                    color: color,
+                    style: style,
+                    text: text.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            )
+        }
+
+        guard !created.isEmpty else { return false }
+        for highlight in created {
+            addAnnotations(for: highlight)
+        }
+        highlights.append(contentsOf: created)
+        pdfView.clearSelection()
+        persistAnnotations()
+        return true
+    }
+
+    func removeHighlight(id: UUID) {
+        for annotation in highlightAnnotations[id] ?? [] {
+            annotation.page?.removeAnnotation(annotation)
+        }
+        highlightAnnotations[id] = nil
+        highlights.removeAll { $0.id == id }
+        persistAnnotations()
+    }
+
+    func recolorHighlight(id: UUID, to color: HighlightColor) {
+        guard let index = highlights.firstIndex(where: { $0.id == id }) else { return }
+        highlights[index].color = color
+        for annotation in highlightAnnotations[id] ?? [] {
+            annotation.color = Self.annotationColor(color, style: highlights[index].style)
+        }
+        persistAnnotations()
+    }
+
+    func go(to highlight: StoredHighlight) {
+        guard let page = document.page(at: highlight.page) else { return }
+        if let rect = highlight.cgRects.first {
+            pdfView.go(to: rect, on: page)
+        } else {
+            pdfView.go(to: page)
+        }
+        onDirty?()
+    }
+
+    private func addAnnotations(for highlight: StoredHighlight) {
+        guard let page = document.page(at: highlight.page) else { return }
+        let type: PDFAnnotationSubtype = highlight.style == .underline ? .underline : .highlight
+        var added: [PDFAnnotation] = []
+        for rect in highlight.cgRects {
+            let annotation = PDFAnnotation(bounds: rect, forType: type, withProperties: nil)
+            annotation.color = Self.annotationColor(highlight.color, style: highlight.style)
+            page.addAnnotation(annotation)
+            added.append(annotation)
+        }
+        highlightAnnotations[highlight.id] = added
+    }
+
+    private static func annotationColor(_ color: HighlightColor, style: HighlightStyle) -> NSColor {
+        style == .underline ? color.nsColor : color.nsColor.withAlphaComponent(0.4)
+    }
+
+    /// The highlight under a point in the PDF view, if any.
+    private func highlightID(at point: NSPoint) -> UUID? {
+        guard let page = pdfView.page(for: point, nearest: false) else { return nil }
+        let pagePoint = pdfView.convert(point, to: page)
+        for (id, annotations) in highlightAnnotations {
+            if annotations.contains(where: { $0.page === page && $0.bounds.insetBy(dx: -2, dy: -2).contains(pagePoint) }) {
+                return id
+            }
+        }
+        return nil
+    }
+
+    private func contextMenuItems(at point: NSPoint) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+
+        if let text = selectedText {
+            let selectionPage = pdfView.currentSelection?.pages.first.map { document.index(for: $0) } ?? pageIndex
+
+            let highlight = NSMenuItem(title: "Highlight", action: nil, keyEquivalent: "")
+            highlight.image = NSImage(systemSymbolName: "highlighter", accessibilityDescription: nil)
+            let colors = NSMenu()
+            for color in HighlightColor.allCases {
+                colors.addItem(ClosureMenuItem(color.label, image: "circle.fill", tint: color.nsColor) { [weak self] in
+                    self?.highlightSelection(color: color)
+                })
+            }
+            colors.addItem(.separator())
+            colors.addItem(ClosureMenuItem("Underline", image: "underline") { [weak self] in
+                self?.highlightSelection(color: .blue, style: .underline)
+            })
+            highlight.submenu = colors
+            items.append(highlight)
+
+            if onSelectionCommand != nil {
+                items.append(.separator())
+                items.append(ClosureMenuItem("Ask Assistant About Selection", image: "sparkles") { [weak self] in
+                    self?.onSelectionCommand?(.ask, text, selectionPage)
+                })
+                items.append(ClosureMenuItem("Explain Selection", image: "lightbulb") { [weak self] in
+                    self?.onSelectionCommand?(.explain, text, selectionPage)
+                })
+                items.append(ClosureMenuItem("Make Flashcards from Selection", image: "rectangle.on.rectangle") {
+                    [weak self] in
+                    self?.onSelectionCommand?(.flashcards, text, selectionPage)
+                })
+                items.append(ClosureMenuItem("Add Selection to Note", image: "note.text.badge.plus") { [weak self] in
+                    self?.onSelectionCommand?(.addToNote, text, selectionPage)
+                })
+            }
+        } else if let id = highlightID(at: point) {
+            let color = NSMenuItem(title: "Highlight Colour", action: nil, keyEquivalent: "")
+            let colors = NSMenu()
+            for option in HighlightColor.allCases {
+                let item = ClosureMenuItem(option.label, image: "circle.fill", tint: option.nsColor) { [weak self] in
+                    self?.recolorHighlight(id: id, to: option)
+                }
+                item.state = highlights.first(where: { $0.id == id })?.color == option ? .on : .off
+                colors.addItem(item)
+            }
+            color.submenu = colors
+            items.append(color)
+            items.append(ClosureMenuItem("Remove Highlight", image: "eraser") { [weak self] in
+                self?.removeHighlight(id: id)
+            })
+        }
+
+        return items
     }
 
     // MARK: - Restore

@@ -6,22 +6,16 @@ struct DocumentTabBar: View {
     #endif
 
     @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var agent: AgentChatModel
     @EnvironmentObject private var workbooks: WorkbookStore
 
-    /// Paths of every file in the active workbook — these live in the workbook
-    /// tab strip, not the main tab row.
-    private var workbookPaths: Set<String> {
-        guard let id = workbooks.activeWorkbookID,
-            let workbook = workbooks.workbooks.first(where: { $0.id == id })
-        else {
-            return []
+    /// Paths of files in any workbook. While a workbook is active those files
+    /// live in its workbook tab strip; other workbooks' open files stay parked
+    /// until that workbook is entered again.
+    private var hiddenWorkbookPaths: Set<String> {
+        guard workbooks.activeWorkbookID != nil else { return [] }
+        return workbooks.workbooks.reduce(into: Set<String>()) { paths, workbook in
+            paths.formUnion(workbook.allPaths)
         }
-        var paths = Set(workbook.items.map(\.path))
-        for folder in workbook.folders {
-            paths.formUnion(folder.items.map(\.path))
-        }
-        return paths
     }
 
     var body: some View {
@@ -31,7 +25,7 @@ struct DocumentTabBar: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(store.tabs.filter { !workbookPaths.contains($0.url.path) }) { tab in
+                        ForEach(store.tabs.filter { !hiddenWorkbookPaths.contains($0.url.path) }) { tab in
                             if store.isPinned(tab) {
                                 pinnedTabButton(for: tab)
                                     .id(tab.id)
@@ -41,24 +35,32 @@ struct DocumentTabBar: View {
                             }
                         }
 
-                        ForEach(store.quizzes.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { quiz in
+                        ForEach(store.quizzes.filter { !hiddenWorkbookPaths.contains($0.fileURL?.path ?? "") }) {
+                            quiz in
                             quizTabButton(for: quiz)
                                 .id(quiz.id)
                         }
 
-                        ForEach(store.flashcards.filter { !workbookPaths.contains($0.deckURL?.path ?? "") }) { deck in
+                        ForEach(store.flashcards.filter { !hiddenWorkbookPaths.contains($0.deckURL?.path ?? "") }) {
+                            deck in
                             flashcardTabButton(for: deck)
                                 .id(deck.id)
                         }
 
-                        ForEach(store.summaries.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { summary in
+                        ForEach(store.summaries.filter { !hiddenWorkbookPaths.contains($0.fileURL?.path ?? "") }) {
+                            summary in
                             summaryTabButton(for: summary)
                                 .id(summary.id)
                         }
 
-                        ForEach(store.notes.filter { !workbookPaths.contains($0.fileURL?.path ?? "") }) { note in
+                        ForEach(store.notes.filter { !hiddenWorkbookPaths.contains($0.fileURL?.path ?? "") }) { note in
                             noteTabButton(for: note)
                                 .id(note.id)
+                        }
+
+                        ForEach(store.lectureTabs) { lecture in
+                            lectureTabButton(for: lecture)
+                                .id(lecture.id)
                         }
 
                         Button {
@@ -73,124 +75,6 @@ struct DocumentTabBar: View {
                         .contentShape(Rectangle())
                         .help("Open another PDF")
                         .padding(.leading, 2)
-
-                        Menu {
-                            if agent.savedDecks.isEmpty {
-                                Button("No saved decks") {}
-                                    .disabled(true)
-                            } else {
-                                ForEach(agent.savedDecks) { deck in
-                                    Menu("\(deck.title) · \(deck.cardCount) cards") {
-                                        Button("Open") {
-                                            agent.openSavedDeck(deck)
-                                        }
-                                        Divider()
-                                        addToWorkbookMenu(
-                                            item: workbooks.makeItem(kind: .deck, title: deck.title, url: deck.url)
-                                        )
-                                        Button("Rename…") {
-                                            agent.promptRenameDeck(deck)
-                                        }
-                                        Button("Delete…") {
-                                            agent.confirmDeleteDeck(deck)
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button("Refresh List") {
-                                agent.refreshSavedDecks()
-                            }
-                        } label: {
-                            Image(systemName: "rectangle.stack")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("Open a saved flashcard deck")
-
-                        Menu {
-                            if agent.savedSummaries.isEmpty {
-                                Button("No saved summaries") {}
-                                    .disabled(true)
-                            } else {
-                                ForEach(agent.savedSummaries) { summary in
-                                    Menu(summary.title) {
-                                        Button("Open") {
-                                            agent.openSavedSummary(summary)
-                                        }
-                                        Divider()
-                                        addToWorkbookMenu(
-                                            item: workbooks.makeItem(
-                                                kind: .summary, title: summary.title, url: summary.url)
-                                        )
-                                        Button("Rename…") {
-                                            agent.promptRenameSummary(summary)
-                                        }
-                                        Button("Delete…") {
-                                            agent.confirmDeleteSummary(summary)
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button("Refresh List") {
-                                agent.refreshSavedSummaries()
-                            }
-                        } label: {
-                            Image(systemName: "doc.plaintext")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("Open a saved summary")
-
-                        Menu {
-                            if agent.savedQuizzes.isEmpty {
-                                Button("No saved quizzes") {}
-                                    .disabled(true)
-                            } else {
-                                ForEach(agent.savedQuizzes) { quiz in
-                                    Menu(quiz.title) {
-                                        Button("Open") {
-                                            agent.openSavedQuiz(quiz)
-                                        }
-                                        Divider()
-                                        addToWorkbookMenu(
-                                            item: workbooks.makeItem(kind: .quiz, title: quiz.title, url: quiz.url)
-                                        )
-                                        Button("Rename…") {
-                                            agent.promptRenameSavedQuiz(quiz)
-                                        }
-                                        Button("Delete…") {
-                                            agent.confirmDeleteSavedQuiz(quiz)
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            Button("Refresh List") {
-                                agent.refreshSavedQuizzes()
-                            }
-                        } label: {
-                            Image(systemName: "checklist")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("Open a saved quiz")
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -600,6 +484,72 @@ struct DocumentTabBar: View {
         }
     }
 
+    private func lectureTabButton(for lecture: LectureTab) -> some View {
+        let isFocusedTab = store.selectedLectureID == lecture.id
+
+        return Button {
+            store.selectLectureTab(lecture)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "play.rectangle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isFocusedTab ? Color.accentColor : .secondary)
+
+                Text(lecture.title)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .foregroundStyle(isFocusedTab ? Color.primary : .secondary)
+            }
+            .padding(.leading, 9)
+            .padding(.trailing, 26)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isFocusedTab ? Color(nsColor: .controlBackgroundColor) : .clear)
+                    .shadow(color: .black.opacity(isFocusedTab ? 0.18 : 0), radius: 1.5, y: 0.5)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isFocusedTab ? 0.10 : 0.06), lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if isFocusedTab {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 10)
+                        .offset(y: -1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .hoverTint()
+        .help("Echo360 lecture portal")
+        .contextMenu {
+            Button("Close Tab") {
+                store.closeLectureTab(lecture)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                store.closeLectureTab(lecture)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(isFocusedTab ? 1 : 0.55))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .help("Close this tab")
+        }
+    }
+
     @ViewBuilder
     private func addToWorkbookMenu(item: WorkbookItem) -> some View {
         Menu("Add to Workbook") {
@@ -643,9 +593,9 @@ struct DocumentTabBar: View {
             Button("Close Split View") {
                 store.collapseSplit()
             }
-        } else if store.tabs.count > 1 {
+        } else {
             Divider()
-            Button("Open in Split View") {
+            Button("Open in Split View…") {
                 store.split(with: tab)
             }
         }

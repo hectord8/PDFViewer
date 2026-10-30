@@ -1,0 +1,81 @@
+Build a web version of PDFViewer for a small team.
+
+DECISIONS
+- One shared team library (workbooks, folders, PDFs).
+- Notes are private to their author by default, with an optional "Share with team" toggle.
+- AI uses a server-held hosted API key (OpenAI-compatible provider). Do not expose keys to the browser.
+- Start with a fresh library; do not migrate the existing macOS data.
+- Include AI study aids: summaries, flashcards, and quizzes.
+- Out of scope for the web app: Echo360 playback, screen/audio recording, on-device ASR, macOS file bookmarks. Those remain desktop-only.
+
+PRODUCT SCOPE
+- Shared workbooks, nested folders, drag/drop, rename/delete.
+- Shared PDF uploads and reading: tabs, split panes, find, thumbnails, page/zoom restore.
+- Private notes by default: rich text, images, autosave, optional sharing, page notes, export to PDF/HTML/Markdown/TXT/DOCX.
+- AI chat with context: none / current page / whole document / whole workbook.
+- AI-generated summaries, flashcards, and quizzes saved into workbooks, private by default and shareable.
+
+STACK
+- Frontend: Next.js (App Router) + TypeScript + Tailwind/shadcn, React Query, Zustand.
+- PDF: PDF.js (rendering, text layer, search, thumbnails).
+- Notes: TipTap/ProseMirror with image upload.
+- Library tree: dnd-kit.
+- Backend: Next.js Node-runtime route handlers; Drizzle ORM.
+- Database: Postgres (Neon or Supabase).
+- Storage: S3/R2/Supabase Storage with presigned uploads.
+- Auth: Clerk or Auth.js, invite-only, one workspace, owner/member roles.
+- AI: server-side OpenAI-compatible provider, streaming SSE, background jobs for study aids.
+- Hosting: Vercel + Neon + R2 (or Supabase), Sentry, GitHub Actions.
+
+DATA MODEL
+- users, workspaces, memberships
+- workbooks, folders (nested), workbook_items
+- documents (pdf, note, summary, deck, quiz, file; owner_id, visibility, storage key, metadata)
+- note_contents (TipTap JSON/HTML), page_notes (owner_id, page, text)
+- document_text (shared extracted PDF text/chunks for AI and search)
+- chats, messages, ai_jobs (per user)
+
+RULES
+- Shared documents use visibility=workspace.
+- Private notes and study aids use visibility=private and owner_id.
+- API queries must filter by workspace membership and owner/visibility.
+- Private workbook items are visible only to their owner.
+- Private notes/aids may be used in that user's AI context but never included for other users.
+
+PHASES
+0. Foundation: repo scaffold, auth, workspace/membership, Postgres, storage, CI, staging deploy, and one working PDF upload/viewer. Target: usable shell in week one.
+1. PDF core: shared PDF uploads, PDF.js viewer, tabs, split panes, find, thumbnails, page/zoom persistence.
+2. Library + notes: workbook tree, folders, drag/drop, rename/delete; TipTap notes with image upload, autosave, private/share toggle, page notes, exports.
+3. AI chat: context picker, extracted-text cache, streaming responses, chat history, floating prompt panel.
+4. Study aids: summaries, flashcards, quizzes generated server-side using the desktop prompt formats; private by default, shareable, saved into workbooks.
+5. Hardening: E2E tests, permission tests for private/shared filtering, rate limits, backups, security review.
+
+Estimated total: 8-11 weeks for one developer.
+
+AI DESIGN
+- Server-held provider key; never expose credentials to the browser.
+- Extract PDF text with PDF.js, cache in document_text, apply token budgeting/truncation, and use simple retrieval for whole-workbook prompts.
+- Per-user rate limits and quotas.
+- Generate study aids asynchronously; validate structured JSON for quizzes and decks.
+- Reuse the desktop app's prompt formats for summaries, flashcards, and quizzes.
+
+SECURITY / OPS
+- Membership checks on every query; enforce owner/visibility filters server-side.
+- Presigned URLs, MIME/size validation, CSRF protection, rate limits, secrets in env.
+- Backups, staging/prod separation, error tracking.
+- Test private/shared isolation explicitly.
+
+TESTING
+- Unit: AI JSON parsing, note export, permission filters, PDF text chunking.
+- Integration: upload -> view -> note -> workbook; AI context; private/shared visibility.
+- E2E with Playwright: auth, PDF tabs/split/search, notes autosave, AI chat, study-aid generation.
+
+RISKS
+- PDF.js fidelity vs PDFKit; annotations/highlights are a later add-on.
+- Rich-text/image fidelity vs RTFD; export differences.
+- Large-document AI context limits and cost.
+- Scope creep from Echo360/recording; keep those out.
+- Private-note leakage if filtering is wrong; cover with tests.
+
+START
+Build Phase 0 first: deployed invite-only shell with Postgres, storage, auth, and one working PDF upload/viewer.

@@ -72,6 +72,24 @@ struct WorkbookTests {
         #expect(decoded.folders.isEmpty)
     }
 
+    @Test func allPathsIncludesNestedItems() {
+        let workbook = Workbook(
+            name: "Term 1",
+            items: [item("/tmp/a.pdf")],
+            folders: [
+                WorkbookFolder(
+                    name: "Week 1",
+                    items: [item("/tmp/b.pdf")],
+                    folders: [
+                        WorkbookFolder(name: "Day 2", items: [item("/tmp/c.pdf")])
+                    ]
+                )
+            ]
+        )
+
+        #expect(workbook.allPaths == Set(["/tmp/a.pdf", "/tmp/b.pdf", "/tmp/c.pdf"]))
+    }
+
     @Test func decodingWithoutOptionalFieldsUsesDefaults() throws {
         let workbookData = Data(#"{"name":"Term 1"}"#.utf8)
         let workbook = try JSONDecoder().decode(Workbook.self, from: workbookData)

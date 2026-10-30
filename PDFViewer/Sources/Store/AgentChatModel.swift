@@ -472,7 +472,11 @@ final class AgentChatModel: ObservableObject {
                     payload = prompt
                 } else {
                     sentContextHash = hash
-                    payload = Self.compose(question: prompt, context: attached)
+                    // Workbook answers cite which document and page each fact came from.
+                    payload =
+                        contextScope == .workbook
+                        ? Self.workbookAssistantPrompt(question: prompt, context: attached)
+                        : Self.compose(question: prompt, context: attached)
                 }
             } else {
                 payload = prompt
@@ -559,6 +563,34 @@ final class AgentChatModel: ObservableObject {
         }
     }
 
+    /// Bumped to ask the panel to focus its input field.
+    @Published var focusInputRequest = 0
+
+    /// Attaches text selected in a PDF, replacing any earlier selection.
+    func attachSelection(_ text: String, documentTitle: String, pageIndex: Int) {
+        attachments.removeAll { $0.name.hasPrefix(Self.selectionPrefix) }
+        attachments.append(
+            Attachment(
+                name: "\(Self.selectionPrefix)\(documentTitle), p. \(pageIndex + 1)",
+                kind: .text,
+                size: text.utf8.count,
+                text: text
+            )
+        )
+    }
+
+    private static let selectionPrefix = "Selection — "
+
+    /// Sends a prompt on the reader's behalf (e.g. from a right-click action),
+    /// connecting first if needed.
+    func ask(_ prompt: String, context: String?) async {
+        if !status.isConnected {
+            await connect()
+        }
+        input = prompt
+        await send(context: context)
+    }
+
     func removeAttachment(_ attachment: Attachment) {
         attachments.removeAll { $0.id == attachment.id }
     }
@@ -580,81 +612,11 @@ final class AgentChatModel: ObservableObject {
         }
     }
 
-    // MARK: - Workbook assistant (main chat)
-
-    @Published var workbookMessages: [ChatMessage] = []
-    @Published var workbookInput: String = ""
-    @Published var isSendingWorkbook = false
-
-    private var workbookSessionID: String?
-    private var workbookContextHash: Int?
-
-    var canSendWorkbook: Bool {
-        status.isConnected
-            && !workbookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !isSendingWorkbook
-    }
-
-    func sendWorkbookMessage() async {
-        let prompt = workbookInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isSendingWorkbook else { return }
-        guard let client else {
-            status = .failed("Not connected to opencode.")
-            return
-        }
-
-        workbookInput = ""
-        isSendingWorkbook = true
-        defer { isSendingWorkbook = false }
-        workbookMessages.append(ChatMessage(role: .user, text: prompt, attachedContext: nil))
-
-        do {
-            let session = try await ensureWorkbookSession(client: client)
-            let context = Self.workbookContext(query: prompt)
-
-            let payload: String
-            if let context, !context.isEmpty {
-                let hash = context.hashValue
-                if workbookContextHash == hash {
-                    payload = prompt
-                } else {
-                    workbookContextHash = hash
-                    payload = Self.workbookAssistantPrompt(question: prompt, context: context)
-                }
-            } else {
-                payload = prompt
-            }
-
-            let reply = try await client.sendMessage(sessionID: session, text: payload, model: parsedModel)
-            workbookMessages.append(
-                ChatMessage(
-                    role: .assistant,
-                    text: reply.trimmingCharacters(in: .whitespacesAndNewlines),
-                    attachedContext: nil
-                )
-            )
-        } catch {
-            log("Workbook request failed — \(Self.describe(error))")
-            workbookMessages.append(ChatMessage(role: .error, text: Self.describe(error), attachedContext: nil))
-        }
-    }
-
-    func newWorkbookChat() {
-        workbookSessionID = nil
-        workbookContextHash = nil
-        workbookMessages.removeAll()
-    }
-
-    private func ensureWorkbookSession(client: OpenCodeClient) async throws -> String {
-        if let workbookSessionID { return workbookSessionID }
-        let created = try await client.createSession()
-        workbookSessionID = created
-        return created
-    }
+    // MARK: - Workbook answers
 
     private static func workbookAssistantPrompt(question: String, context: String) -> String {
         """
-        You are a study assistant for a whole workbook of course material. Answer the question using the material below. Wherever you use a fact, name the document (and page or heading) it came from and quote the relevant snippet. Finish with a short "Sources" section listing the documents and pages you drew on. If the material doesn't contain the answer, say so.
+        You are a study assistant for a whole workbook of course material. Answer the question using the material below. Wherever you use a fact, name the document (and page or heading) it came from and quote the relevant snippet. Finish with a short "Sources" section listing the documents and pages you drew on. If the material doesn't contain the answer, say so. Write any mathematics as LaTeX: inline math as $...$ and display equations as $$...$$.
 
         [Workbook material]
         \(context)

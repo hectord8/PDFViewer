@@ -196,7 +196,7 @@ struct WorkbookTabBar: View {
         .help(entry.item.path)
         .contextMenu {
             if let split = entry.split {
-                Button("Open in Split View") {
+                Button("Open in Split View…") {
                     split()
                 }
             }

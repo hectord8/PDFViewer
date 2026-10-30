@@ -8,7 +8,9 @@ struct NoteEditorView: View {
     #endif
 
     @EnvironmentObject private var store: LibraryStore
+    @EnvironmentObject private var workbooks: WorkbookStore
     @ObservedObject var note: NoteTab
+    @State private var showSaveToWorkbook = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,6 +19,17 @@ struct NoteEditorView: View {
             RichTextEditorView(text: $note.text, onChanged: { note.markChanged() })
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .sheet(isPresented: $showSaveToWorkbook) {
+            SaveToWorkbookSheet(title: note.title) { workbookID, folderID in
+                note.saveNow()
+                guard let url = note.fileURL else { return }
+                workbooks.add(
+                    workbooks.makeItem(kind: .note, title: note.title, url: url),
+                    to: workbookID,
+                    folderID: folderID
+                )
+            }
+        }
         .hotReload()
     }
 
@@ -66,10 +79,26 @@ struct NoteEditorView: View {
                         NotesStore.writePDF(note.text, to: url)
                     }
                 }
+                Button("Plain Text (.txt)…") {
+                    export(extension: "txt", type: .plainText) { url in
+                        do {
+                            try note.text.string.write(to: url, atomically: true, encoding: .utf8)
+                            return true
+                        } catch {
+                            NSLog("PDFViewer: could not save text: \(error.localizedDescription)")
+                            return false
+                        }
+                    }
+                }
                 Button("Rich Text (.rtf)…") {
                     export(extension: "rtf", type: .rtf) { url in
                         NotesStore.save(note.text, title: note.title, to: url) != nil
                     }
+                }
+                Divider()
+                Button("Save to Workbook…") {
+                    note.saveNow()
+                    showSaveToWorkbook = true
                 }
             } label: {
                 Image(systemName: "square.and.arrow.down")

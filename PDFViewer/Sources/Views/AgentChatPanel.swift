@@ -71,7 +71,7 @@ struct AgentChatPanel: View {
                 .background(Circle().fill(Color.accentColor.opacity(0.12)))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("opencode")
+                Text("Assistant")
                     .font(.system(size: 13, weight: .semibold))
                 statusBadge
             }
@@ -87,7 +87,7 @@ struct AgentChatPanel: View {
                 showSettings.toggle()
             }
 
-            headerButton("sidebar.right", help: "Hide the agent panel") {
+            headerButton("sidebar.right", help: "Hide the assistant") {
                 store.showAgentPanel = false
             }
         }
@@ -239,18 +239,48 @@ struct AgentChatPanel: View {
                 .frame(width: 40, height: 40)
                 .background(Circle().fill(Color.accentColor.opacity(0.10)))
 
-            Text("Ask about this document")
+            Text(emptyTitle)
                 .font(.system(size: 14, weight: .semibold))
 
-            Text(
-                "Choose the context, then ask a question. Select “Whole workbook” to search across everything in your workbook."
-            )
+            Text(emptyDetail)
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 20)
+    }
+
+    private var emptyTitle: String {
+        switch model.contextScope {
+        case .currentPage: return "Ask about this page"
+        case .wholeDocument: return "Ask about this document"
+        case .workbook: return "Ask about your workbook"
+        case .none: return "Ask anything"
+        }
+    }
+
+    private var emptyDetail: String {
+        switch model.contextScope {
+        case .workbook:
+            return "Answers draw on everything in the active workbook and name the document and page each fact came from."
+        case .currentPage, .wholeDocument:
+            if store.activeTab == nil {
+                return "Open a PDF, or switch the context below to Workbook to ask across all your material."
+            }
+            return "Change the context below to ask about the page, the document or the whole workbook. Select text in the PDF and right-click to ask about just that passage."
+        case .none:
+            return "Nothing from your documents is attached. Change the context below to include a page, document or workbook."
+        }
+    }
+
+    private var placeholder: String {
+        switch model.contextScope {
+        case .currentPage: return "Ask about this page…"
+        case .wholeDocument: return "Ask about this document…"
+        case .workbook: return "Ask across your workbook…"
+        case .none: return "Ask anything…"
+        }
     }
 
     private var thinkingRow: some View {
@@ -369,11 +399,12 @@ struct AgentChatPanel: View {
                     onPrevious: { model.recallPrevious() },
                     onNext: { model.recallNext() },
                     onEdited: { model.resetHistoryCursor() },
-                    onFocusChange: { inputFocused = $0 }
+                    onFocusChange: { inputFocused = $0 },
+                    focusRequest: model.focusInputRequest
                 )
 
                 if model.input.isEmpty {
-                    Text("Ask about this document…")
+                    Text(placeholder)
                         .font(.callout)
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 5)
@@ -778,6 +809,8 @@ struct CommandLineField: NSViewRepresentable {
     var onNext: () -> Void
     var onEdited: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// Changing this value moves keyboard focus into the field.
+    var focusRequest: Int = 0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -814,6 +847,12 @@ struct CommandLineField: NSViewRepresentable {
     func updateNSView(_ textView: CommandLineTextView, context: Context) {
         context.coordinator.parent = self
         applyCallbacks(to: textView)
+        if focusRequest != context.coordinator.lastFocusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
         if textView.string != text {
             textView.string = text
             let end = (text as NSString).length
@@ -831,6 +870,7 @@ struct CommandLineField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CommandLineField
         weak var textView: CommandLineTextView?
+        var lastFocusRequest = 0
 
         init(_ parent: CommandLineField) { self.parent = parent }
 

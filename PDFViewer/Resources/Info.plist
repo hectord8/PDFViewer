@@ -41,5 +41,9 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Record lecture audio so it can be transcribed into your notes.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Transcribe lecture audio that you choose, entirely on this Mac.</string>
 </dict>
 </plist>

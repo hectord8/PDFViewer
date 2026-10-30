@@ -109,9 +109,14 @@ xattr -cr "$APP" 2>/dev/null || true
 
 # Ad-hoc signature. Enough to run locally on this Mac, no Apple ID needed.
 say "Signing (ad-hoc)"
+# Pin the designated requirement to the bundle id. Ad-hoc signatures otherwise
+# get a cdhash-based requirement, which changes on every rebuild and silently
+# invalidates TCC grants such as Screen Recording.
+REQUIREMENT="=designated => identifier \"$BUNDLE_ID\""
 codesign --force --sign - \
   --options runtime \
   --timestamp=none \
+  --requirements "$REQUIREMENT" \
   "$APP" 2>&1 | sed 's/^/    /' || die "codesign failed"
 
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'

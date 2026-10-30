@@ -13,8 +13,8 @@ struct PDFViewerPane: View {
     var body: some View {
         HStack(spacing: 0) {
             if store.showThumbnails && isFocused {
-                ThumbnailSidebar(tab: tab)
-                    .frame(width: 172)
+                DocumentSidebar(tab: tab)
+                    .frame(width: 196)
                     .id("sidebar")
                 Divider().id("sidebar-divider")
             }

@@ -11,8 +11,10 @@ dependencies. No paid Apple Developer account needed.
 - Remembers every open tab, its page, its zoom, pinned tabs and split layout, and restores them on relaunch
 - Continuous vertical scrolling, zoom (⌘+ / ⌘−), fit to width
 - Find bar (⌘F) with match highlighting and next/previous
-- Toggleable thumbnail sidebar (⌘⌥T)
-- Opencode agent panel (⌘⌥A): chat about the whole document or just the current page, using a local `opencode serve`
+- Toggleable sidebar (⌘⌥T) with page thumbnails and, for PDFs that have one, a clickable table of contents that follows your reading position
+- Highlights and underlines in four colours (select text, then right-click or ⌃⌘H). Saved beside your notes; the PDF file itself is never changed
+- Right-click selected text to ask the assistant about it, have it explained, turn it into flashcards, or quote it into a note beside the PDF
+- Assistant panel (⌘⌥A), using a local `opencode serve`: ask about the current page, the whole document or the whole workbook (⌘⌥K). Workbook answers cite the document and page each fact came from
 - Light and dark mode follow the system automatically
 
 ---
@@ -318,9 +320,26 @@ Target > **Build Settings** > **Info**:
 | Reopen closed tab   | ⌘⇧T                  |
 | Zoom in / out       | ⌘+ / ⌘−              |
 | Actual size (100%)  | ⌘0                   |
-| Toggle thumbnails   | ⌘⌥T                  |
-| Toggle agent panel  | ⌘⌥A                  |
-| Next / previous hit | ⏎ / ⌘G in the find bar |
+| Toggle sidebar      | ⌘⌥T                  |
+| Toggle assistant    | ⌘⌥A                  |
+| Ask about workbook  | ⌘⌥K                  |
+| Highlight selection | ⌃⌘H                  |
+| Toggle page notes   | ⌘⌥N                  |
+| New note            | ⌘⇧N                  |
+| Split view          | ⌘⌥S                  |
+| Toggle library      | ⌘⌥L                  |
+| Lecture portal      | ⌘⌥E                  |
+| Find next / previous | ⌘G / ⇧⌘G          |
+| Go to page          | ⌥⌘G                  |
+| Previous / next page | ⌥⌘↑ / ⌥⌘↓           |
+| Save note           | ⌘S                   |
+| Print               | ⌘P                   |
+| Fit to width        | ⌘9                   |
+| Tab 1–9             | ⌘1 … ⌘9              |
+| Ask about workbook  | ⌥⌘K                  |
+| Show AI prompt      | ⌥⌘I                  |
+| Show tasks          | (View menu)          |
+| Next / previous hit | ⏎ in the find bar    |
 | Dismiss find bar    | esc                   |
 
 ---
@@ -439,9 +458,9 @@ PDFViewer/
 │       ├── DocumentTabBar.swift    the tab strip
 │       ├── PDFViewerPane.swift     sidebar + PDFView + find bar
 │       ├── FitWidthPDFView.swift   PDFView that reports width changes
-│       ├── ThumbnailSidebar.swift  PDFThumbnailView bridge
+│       ├── ThumbnailSidebar.swift  sidebar: thumbnails + table of contents
 │       ├── FindBar.swift           ⌘F search field and match counter
-│       ├── AgentChatPanel.swift    opencode chat sidebar
+│       ├── AgentChatPanel.swift    assistant panel (page / document / workbook)
 │       └── WelcomeView.swift       empty state
 └── Resources/
     ├── Info.plist                  declares the app as a PDF handler
@@ -468,3 +487,43 @@ key equivalent at launch, leaving the app's own "Close Tab" as the only ⌘W.
 
 **Session saving.** Writes are debounced by 0.75 s and forced on quit, so
 scrolling does not hammer the disk.
+
+---
+
+## 9. Lecture portal (Echo360)
+
+The app can play your Echo360 lessons and turn their transcripts into notes.
+It uses the normal Echo360 web login (SSO/MFA) inside an embedded browser, so no
+institutional API credentials are needed.
+
+1. Open **View > Lecture Portal** (⌘⌥E).
+2. Sign in to Echo360 (defaults to `https://echo360.net.au`).
+3. Click **+** and paste a lesson URL, e.g.
+   `https://echo360.net.au/lesson/<id>/classroom`.
+4. Open the player's transcript panel and click **Fetch transcript**. The app
+   reads the existing Echo360 transcript when available.
+5. Click **Save to Notes**. The transcript is saved as a note and filed into the
+   active workbook's **Notes** folder.
+
+If a lesson has no transcript:
+
+- **Record** PDFViewer's audio while the lecture plays, then stop; the app
+  transcribes the recording automatically. Other apps' audio is not captured.
+  macOS asks for Screen Recording permission the first time — grant it, then
+  restart the app.
+- **Import…** a `.txt` or `.vtt` file downloaded from Echo360, or
+- **⋯ > Transcribe audio file…** an audio file you already have.
+
+Transcription settings (gear icon):
+
+- **On-device** — free and private Apple Speech (macOS 26+).
+- **Groq Whisper** — free tier with rate limits; create a key at
+  <https://console.groq.com>.
+- **OpenAI Whisper** — billed per minute of audio.
+
+API keys are stored in the macOS Keychain. Cloud providers receive the audio
+file; on-device transcription does not upload anything.
+
+Limitations: Echo360's player endpoints are unofficial and may change; embedded
+SSO can be blocked by some identity providers; DRM-protected audio may record as
+silence. Only transcribe content you are permitted to use.
